@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell";
 
 export const metadata: Metadata = {
   title: "Cloud Nexus Scholar",
-  description: "Slice 1 and Slice 2 learning foundation for Cloud Nexus Scholar.",
+  description: "A private UMGC academic operating system for roadmap, courses, and future study modules.",
 };
 
 export default function RootLayout({

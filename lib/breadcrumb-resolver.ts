@@ -1,8 +1,12 @@
-import { getCourseBySlug, getTopicBySlug } from "@/lib/mock-data";
+import { getCourseBySlug, getTopicBySlug } from "@/lib/programs";
 import { BreadcrumbItem } from "@/lib/types";
 
 const LABEL_MAP: Record<string, string> = {
+  roadmap: "Roadmap",
   courses: "Courses",
+  planner: "Planner",
+  library: "Library",
+  sandbox: "Sandbox",
 };
 
 export function resolveBreadcrumbs(pathname: string): BreadcrumbItem[] {
@@ -12,7 +16,7 @@ export function resolveBreadcrumbs(pathname: string): BreadcrumbItem[] {
   const breadcrumbs: BreadcrumbItem[] = [
     {
       label: "Home",
-      href: "/",
+      href: "/roadmap",
     },
   ];
 
@@ -20,14 +24,6 @@ export function resolveBreadcrumbs(pathname: string): BreadcrumbItem[] {
 
   segments.forEach((segment, index) => {
     href += `/${segment}`;
-
-    if (segment === "courses") {
-      breadcrumbs.push({
-        label: LABEL_MAP[segment],
-        href,
-      });
-      return;
-    }
 
     if (segments[0] === "courses" && index === 1) {
       const course = getCourseBySlug(segment);
