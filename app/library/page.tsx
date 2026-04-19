@@ -334,17 +334,18 @@ export default function LibraryPage() {
         )}
       </section>
 
-      <section className="space-y-6">
-        <div className="flex items-center gap-4">
-          <div className="h-px flex-1 bg-border/70" />
-          <div className="text-xs uppercase tracking-[0.24em] text-muted">
-            Academic Integrity Scanner
-          </div>
-          <div className="h-px flex-1 bg-border/70" />
+      <div className="relative my-10">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-border/70" />
         </div>
+        <div className="relative flex justify-center">
+          <span className="bg-bg px-4 text-xs uppercase tracking-[0.2em] text-muted">
+            Academic Integrity Scanner
+          </span>
+        </div>
+      </div>
 
-        <WritingScanner />
-      </section>
+      <WritingScanner />
     </div>
   );
 }

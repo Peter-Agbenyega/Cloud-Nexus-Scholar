@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -426,14 +425,15 @@ to tackle first. Keep the greeting to 2-3 sentences maximum.`;
       </div>
 
       {activeMode === "assignment" ? (
-        <div className="border-b border-border/70 px-5 py-4">
-          <Link
-            href="/library"
-            className="block rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-100 transition hover:border-amber-300/35 hover:bg-amber-500/15"
-          >
-            When your draft is ready, use the Academic Integrity Scanner in your
-            Library before submitting to UMGC.
-          </Link>
+        <div className="mx-5 mt-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3">
+          <p className="text-xs text-amber-300">
+            When your draft is ready,{" "}
+            <a href="/library" className="underline underline-offset-2">
+              run the full integrity scan in your Library
+            </a>
+            {" "}before submitting to UMGC. AI detection + patchwriting check + citation gaps +
+            voice consistency — all in one scan.
+          </p>
         </div>
       ) : null}
 
