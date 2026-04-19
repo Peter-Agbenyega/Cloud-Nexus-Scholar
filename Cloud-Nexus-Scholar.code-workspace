@@ -1,0 +1,27 @@
+{
+  "folders": [
+    {
+      "name": "Cloud Nexus Scholar",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.git": true,
+      "**/.DS_Store": true,
+      "**/node_modules": true,
+      "**/.next": true
+    },
+    "editor.formatOnSave": true,
+    "typescript.preferences.importModuleSpecifier": "non-relative",
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "extensions": {
+    "recommendations": [
+      "esbenp.prettier-vscode",
+      "bradlc.vscode-tailwindcss",
+      "dbaeumer.vscode-eslint",
+      "ms-vscode.vscode-typescript-next"
+    ]
+  }
+}
