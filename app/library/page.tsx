@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import { WritingScanner } from "@/components/writing-scanner";
 import {
   appendActivityEvent,
   getAllCourseOptions,
@@ -331,6 +332,18 @@ export default function LibraryPage() {
             No library entries match the current search and filter.
           </div>
         )}
+      </section>
+
+      <section className="space-y-6">
+        <div className="flex items-center gap-4">
+          <div className="h-px flex-1 bg-border/70" />
+          <div className="text-xs uppercase tracking-[0.24em] text-muted">
+            Academic Integrity Scanner
+          </div>
+          <div className="h-px flex-1 bg-border/70" />
+        </div>
+
+        <WritingScanner />
       </section>
     </div>
   );
