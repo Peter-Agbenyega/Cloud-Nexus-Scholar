@@ -129,6 +129,45 @@ export default function HomePage() {
             label: "Checking tutor status...",
           };
 
+  const commandCenterCards = [
+    {
+      icon: "🎓",
+      title: "AI Tutor — Prof. Scholar",
+      description: "4 modes: Tutor, Professor, Quiz, Assignment. Opens inside every course topic.",
+      href: "/courses/clcs-605-introduction-to-cloud-computing/cloud-service-models",
+    },
+    {
+      icon: "📅",
+      title: "Academic Planner",
+      description: "UMGC semester timeline, weekly checklists, assignment reminders.",
+      href: "/planner",
+    },
+    {
+      icon: "📚",
+      title: "Knowledge Library",
+      description: "Save notes, drafts, and professor-mode sessions. Includes integrity scanner.",
+      href: "/library",
+    },
+    {
+      icon: "🛡️",
+      title: "Cyber Sandbox",
+      description: "5 real defensive scenarios. IAM, containers, Kubernetes, supply chain, S3.",
+      href: "/sandbox",
+    },
+    {
+      icon: "🔍",
+      title: "Integrity Scanner",
+      description: "AI detection + patchwriting + citation gaps + voice consistency. No extra cost.",
+      href: "/library",
+    },
+    {
+      icon: "🗺️",
+      title: "Program Roadmap",
+      description: "Full UMGC path: MS Cloud Computing + Cybersecurity Certificate. 42 credits mapped.",
+      href: "/roadmap",
+    },
+  ];
+
   return (
     <div className="space-y-8">
       <section className="rounded-card border border-border/70 bg-panel/80 p-6">
@@ -285,6 +324,34 @@ export default function HomePage() {
             <div className="mt-2 text-sm text-muted">{activeSession.timeframe}</div>
           </div>
         </article>
+      </section>
+
+      <section className="rounded-card border border-border/70 bg-panel/80 p-6">
+        <div className="text-xs uppercase tracking-[0.2em] text-muted">
+          Your Command Center — All Systems Live
+        </div>
+        <h2 className="mt-2 text-2xl font-semibold text-text">Every module is built and ready to use.</h2>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {commandCenterCards.map((card) => (
+            <Link
+              key={card.title}
+              href={card.href}
+              className="rounded-card border border-border/70 bg-panelAlt/70 p-5 transition hover:border-accent/35 hover:bg-panelAlt/90"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full border border-border/70 bg-panel/70 text-2xl text-muted">
+                  {card.icon}
+                </div>
+                <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
+                  Live
+                </span>
+              </div>
+              <div className="mt-4 text-lg font-semibold text-text">{card.title}</div>
+              <div className="mt-2 text-sm text-muted">{card.description}</div>
+            </Link>
+          ))}
+        </div>
       </section>
     </div>
   );

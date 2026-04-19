@@ -8,11 +8,12 @@ import { getTopicPosition, pluralize } from "@/lib/course-helpers";
 import { getCourseBySlug, getCourses, getPrograms, getTopicBySlug } from "@/lib/programs";
 
 const navItems = [
+  { label: "Home", href: "/", description: "Private academic workspace", status: null },
   { label: "Roadmap", href: "/roadmap", description: "Academic mission control", status: "Live" },
   { label: "Courses", href: "/courses", description: "UMGC course workspace", status: "Live" },
-  { label: "Planner", href: "/planner", description: "Coming soon", status: "Soon" },
-  { label: "Library", href: "/library", description: "Coming soon", status: "Soon" },
-  { label: "Sandbox", href: "/sandbox", description: "Coming soon", status: "Soon" },
+  { label: "Planner", href: "/planner", description: "UMGC semester command", status: "Live" },
+  { label: "Library", href: "/library", description: "Notes and integrity scanner", status: "Live" },
+  { label: "Sandbox", href: "/sandbox", description: "Cyber scenario training", status: "Live" },
 ];
 
 export function Sidebar() {
@@ -97,15 +98,11 @@ export function Sidebar() {
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-text">{item.label}</div>
-                <span
-                  className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${
-                    item.status === "Live"
-                      ? "border-accent/30 text-accent"
-                      : "border-border/70 text-muted"
-                  }`}
-                >
-                  {item.status}
-                </span>
+                {item.status ? (
+                  <span className="rounded-full border border-accent/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-accent">
+                    {item.status}
+                  </span>
+                ) : null}
               </div>
               <div className={`mt-1 text-xs uppercase tracking-[0.18em] ${isActive ? "text-accent" : "text-muted"}`}>
                 {item.description}
