@@ -1,4 +1,10 @@
-export type AcademicTaskType = "discussion" | "reading" | "quiz" | "assignment";
+export type AcademicTaskType =
+  | "discussion_initial"
+  | "discussion_response"
+  | "quiz"
+  | "assignment"
+  | "reading"
+  | "lab";
 
 export type AcademicCoursePlan = {
   courseCode: string;
@@ -17,25 +23,21 @@ export type AcademicSession = {
 
 export const academicSessions: AcademicSession[] = [
   {
-    id: "summer-session",
-    label: "Summer Session",
-    timeframe: "Starts May 13, 2025",
-    startsOn: "2025-05-13",
+    id: "summer-2026",
+    label: "Summer 2026",
+    timeframe: "May 13, 2026 to July 7, 2026 · 8 weeks",
+    startsOn: "2026-05-13",
     status: "active",
     courses: [
       {
         courseCode: "CLCS 605",
-        courseName: "Foundations of Cloud Computing",
+        courseName: "Introduction to Cloud Computing",
         active: true,
       },
       {
         courseCode: "CLCS 615",
-        courseName: "Cloud Architecture and Design",
+        courseName: "Cloud Services and Technologies",
         active: true,
-      },
-      {
-        courseCode: "CTCH 605",
-        courseName: "Introduction to Cybersecurity",
       },
     ],
   },
@@ -98,17 +100,21 @@ export const academicSessions: AcademicSession[] = [
 ];
 
 export const weeklyTaskLabels: Record<AcademicTaskType, string> = {
-  discussion: "Discussion Post",
-  reading: "Reading",
-  quiz: "Quiz",
-  assignment: "Assignment",
+  discussion_initial: "Discussion Initial Post (due Sunday 11:59 PM)",
+  discussion_response: "Discussion Peer Responses (due Tuesday 11:59 PM)",
+  quiz: "Unit Quiz",
+  assignment: "Unit Assignment",
+  reading: "Learning Resources Review (est. 5 hours)",
+  lab: "MARS/Aloft Lab Work",
 };
 
 export const weeklyTaskTypes: AcademicTaskType[] = [
-  "discussion",
-  "reading",
+  "discussion_initial",
+  "discussion_response",
   "quiz",
   "assignment",
+  "reading",
+  "lab",
 ];
 
 export function getActiveAcademicSession() {

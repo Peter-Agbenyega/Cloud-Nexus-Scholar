@@ -10,7 +10,7 @@ import { getCourses } from "@/lib/programs";
 import { getCourseProgressSnapshot } from "@/lib/course-progress";
 import { readCompletedTopics } from "@/lib/progress";
 
-export type TutorMode = "tutor" | "professor" | "quiz" | "assignment";
+export type TutorMode = "tutor" | "professor" | "quiz" | "assignment" | "discussion";
 
 export type TutorMessage = {
   role: "user" | "assistant";

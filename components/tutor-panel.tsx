@@ -18,6 +18,18 @@ type TutorPanelProps = {
   courseName: string;
   topicTitle: string;
   initialMode?: TutorMode;
+  unitContext?: string;
+  initialSilentContext?: string;
+  initialPrompt?: string;
+  initialPromptMode?: TutorMode;
+  pendingPrompt?: {
+    id: string;
+    content: string;
+    mode?: TutorMode;
+    silentUserMessage?: boolean;
+    activityLabel?: string;
+  } | null;
+  onPendingPromptHandled?: (id: string) => void;
 };
 
 type MessageWithDate = {
@@ -30,6 +42,7 @@ const modeTabs: { label: string; value: TutorMode }[] = [
   { label: "Tutor", value: "tutor" },
   { label: "Professor Mode", value: "professor" },
   { label: "Quiz", value: "quiz" },
+  { label: "Discussion Coach", value: "discussion" },
   { label: "Assignment Help", value: "assignment" },
 ];
 
@@ -83,6 +96,12 @@ export function TutorPanel({
   courseName,
   topicTitle,
   initialMode = "tutor",
+  unitContext,
+  initialSilentContext,
+  initialPrompt,
+  initialPromptMode,
+  pendingPrompt,
+  onPendingPromptHandled,
 }: TutorPanelProps) {
   const [messages, setMessages] = useState<MessageWithDate[]>([]);
   const [input, setInput] = useState("");
@@ -91,6 +110,7 @@ export function TutorPanel({
   const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
   const [draftRows, setDraftRows] = useState(1);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const initialBootIdRef = useRef<string | null>(null);
 
   const conversationHistory = useMemo(
     () =>
@@ -134,16 +154,53 @@ export function TutorPanel({
       return;
     }
 
-    const opener = `Peter has just opened the topic '${topicTitle}' in ${courseCode} — ${courseName}.
+    const opener =
+      initialPrompt ??
+      `Peter has just opened the topic '${topicTitle}' in ${courseCode} — ${courseName}.
 Greet him briefly by name, acknowledge the topic, and ask what aspect he wants
 to tackle first. Keep the greeting to 2-3 sentences maximum.`;
 
-    void sendMessage(opener, {
+    const promptToSend = initialSilentContext
+      ? `${initialSilentContext}\n\n${opener}`
+      : opener;
+
+    void sendMessage(promptToSend, {
       silentUserMessage: true,
-      modeOverride: initialMode,
+      modeOverride: initialPromptMode ?? initialMode,
       activityLabel: `Opened tutor for ${topicTitle}`,
     });
-  }, [courseCode, courseName, hasLoadedHistory, initialMode, isLoading, messages.length, topicTitle]);
+  }, [
+    courseCode,
+    courseName,
+    hasLoadedHistory,
+    initialMode,
+    initialPrompt,
+    initialPromptMode,
+    initialSilentContext,
+    isLoading,
+    messages.length,
+    topicTitle,
+  ]);
+
+  useEffect(() => {
+    if (!pendingPrompt || !hasLoadedHistory || isLoading) {
+      return;
+    }
+
+    if (initialBootIdRef.current === pendingPrompt.id) {
+      return;
+    }
+
+    initialBootIdRef.current = pendingPrompt.id;
+
+    void sendMessage(pendingPrompt.content, {
+      silentUserMessage: pendingPrompt.silentUserMessage,
+      modeOverride: pendingPrompt.mode,
+      activityLabel: pendingPrompt.activityLabel,
+    }).finally(() => {
+      onPendingPromptHandled?.(pendingPrompt.id);
+    });
+  }, [hasLoadedHistory, isLoading, onPendingPromptHandled, pendingPrompt]);
 
   useEffect(() => {
     if (!scrollAreaRef.current) {
@@ -172,6 +229,10 @@ to tackle first. Keep the greeting to 2-3 sentences maximum.`;
     const nextMessages = options?.silentUserMessage
       ? [...messages]
       : [...messages, { role: "user" as const, content: trimmed, timestamp: now }];
+
+    if (options?.modeOverride) {
+      setActiveMode(options.modeOverride);
+    }
 
     if (!options?.silentUserMessage) {
       setMessages(nextMessages);
@@ -210,6 +271,7 @@ to tackle first. Keep the greeting to 2-3 sentences maximum.`;
           courseName,
           topicTitle,
           mode: modeToUse,
+          unitContext,
         }),
       });
 

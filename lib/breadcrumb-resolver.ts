@@ -1,4 +1,5 @@
 import { getCourseBySlug, getTopicBySlug } from "@/lib/programs";
+import { getSyllabusCourseBySlug } from "@/lib/syllabus-data";
 import { BreadcrumbItem } from "@/lib/types";
 
 const LABEL_MAP: Record<string, string> = {
@@ -7,6 +8,8 @@ const LABEL_MAP: Record<string, string> = {
   planner: "Planner",
   library: "Library",
   sandbox: "Sandbox",
+  resources: "Resources",
+  unit: "Unit",
 };
 
 export function resolveBreadcrumbs(pathname: string): BreadcrumbItem[] {
@@ -27,8 +30,17 @@ export function resolveBreadcrumbs(pathname: string): BreadcrumbItem[] {
 
     if (segments[0] === "courses" && index === 1) {
       const course = getCourseBySlug(segment);
+      const syllabusCourse = getSyllabusCourseBySlug(segment);
       breadcrumbs.push({
-        label: course?.title ?? formatSegment(segment),
+        label: course?.title ?? syllabusCourse?.name ?? formatSegment(segment),
+        href,
+      });
+      return;
+    }
+
+    if (segments[0] === "courses" && segments[2] === "unit" && index === 3) {
+      breadcrumbs.push({
+        label: `Unit ${segment}`,
         href,
       });
       return;

@@ -121,8 +121,13 @@ function Tag({ label, reason, className }: { label: string; reason: string; clas
   );
 }
 
-export function WritingScanner() {
-  const [text, setText] = useState("");
+type WritingScannerProps = {
+  initialText?: string;
+  autoScanKey?: string | number;
+};
+
+export function WritingScanner({ initialText = "", autoScanKey }: WritingScannerProps) {
+  const [text, setText] = useState(initialText);
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -130,6 +135,14 @@ export function WritingScanner() {
     "overview",
   );
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastAutoScanKeyRef = useRef<string | number | undefined>(undefined);
+
+  useEffect(() => {
+    setText(initialText);
+    setResult(null);
+    setError(null);
+    setActiveTab("overview");
+  }, [initialText]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -167,7 +180,9 @@ export function WritingScanner() {
 
   const allChecksPassed = result ? result.preSubmissionChecklist.every((item) => item.passed) : false;
 
-  async function scanWriting() {
+  async function scanWriting(textOverride?: string) {
+    const textToScan = textOverride ?? text;
+
     setIsScanning(true);
     setError(null);
     setResult(null);
@@ -177,7 +192,7 @@ export function WritingScanner() {
       const response = await fetch("/api/scan-writing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text: textToScan }),
       });
       const data = (await response.json()) as ScanResult | ScanError;
 
@@ -210,6 +225,18 @@ export function WritingScanner() {
   const plagiarismTheme = result ? getDangerScoreTheme(result.plagiarismRisk) : null;
   const citationTheme = result ? getPositiveScoreTheme(result.citationScore) : null;
   const voiceTheme = result ? getPositiveScoreTheme(result.voiceScore) : null;
+
+  useEffect(() => {
+    if (autoScanKey === undefined || autoScanKey === lastAutoScanKeyRef.current) {
+      return;
+    }
+
+    lastAutoScanKeyRef.current = autoScanKey;
+
+    if (initialText.trim().length >= 50) {
+      void scanWriting(initialText);
+    }
+  }, [autoScanKey, initialText]);
 
   return (
     <section className="space-y-6 rounded-card border border-border/70 bg-panel/80 p-6 shadow-card">

@@ -203,7 +203,7 @@ export default function HomePage() {
                 <h2 className="mt-2 text-2xl font-semibold text-text">{course.title}</h2>
               </div>
               <div className="rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-sm text-text">
-                Active — Summer 2025
+                Active — Summer 2026
               </div>
             </div>
 

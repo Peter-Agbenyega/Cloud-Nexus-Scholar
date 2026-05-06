@@ -14,6 +14,7 @@ const navItems = [
   { label: "Planner", href: "/planner", description: "UMGC semester command", status: "Live" },
   { label: "Library", href: "/library", description: "Notes and integrity scanner", status: "Live" },
   { label: "Sandbox", href: "/sandbox", description: "Cyber scenario training", status: "Live" },
+  { label: "Resources", href: "/resources", description: "Course materials and references", status: "Live" },
 ];
 
 export function Sidebar() {

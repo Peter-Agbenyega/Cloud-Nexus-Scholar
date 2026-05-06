@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CourseUnitOverview } from "@/components/course-unit-overview";
 import { CourseDetailCta } from "@/components/course-detail-cta";
 import { TopicList } from "@/components/topic-list";
 import {
@@ -10,6 +11,7 @@ import {
   pluralize,
 } from "@/lib/course-helpers";
 import { getCourseBySlug, getTrackForCourse } from "@/lib/programs";
+import { getSyllabusCourseBySlug } from "@/lib/syllabus-data";
 
 type CourseDetailPageProps = {
   params: Promise<{
@@ -20,6 +22,15 @@ type CourseDetailPageProps = {
 export default async function CourseDetailPage({ params }: CourseDetailPageProps) {
   const { courseSlug } = await params;
   const course = getCourseBySlug(courseSlug);
+  const syllabusCourse = getSyllabusCourseBySlug(courseSlug);
+
+  if (!course && !syllabusCourse) {
+    notFound();
+  }
+
+  if (syllabusCourse) {
+    return <CourseUnitOverview course={syllabusCourse} />;
+  }
 
   if (!course) {
     notFound();
