@@ -243,6 +243,24 @@ export default function HomePage() {
             </div>
           </article>
         ))}
+
+        <article className="rounded-card border border-accent/35 bg-accent/10 p-6 xl:col-span-2">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-accent">Most important feature</div>
+              <h2 className="mt-2 text-2xl font-semibold text-text">✍️ Assignment Workspace</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-7 text-text/90">
+                Paste your work, get a polished answer in one click, copy and submit to LEO
+              </p>
+            </div>
+            <Link
+              href="/workspace"
+              className="inline-flex min-h-11 items-center justify-center rounded-full border border-accent bg-accent px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-accent/90"
+            >
+              Open Workspace →
+            </Link>
+          </div>
+        </article>
       </section>
 
       <section className="rounded-card border border-border/70 bg-panel/80 p-6">

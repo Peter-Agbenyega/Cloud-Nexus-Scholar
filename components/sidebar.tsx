@@ -8,13 +8,20 @@ import { getTopicPosition, pluralize } from "@/lib/course-helpers";
 import { getCourseBySlug, getCourses, getPrograms, getTopicBySlug } from "@/lib/programs";
 
 const navItems = [
-  { label: "Home", href: "/", description: "Private academic workspace", status: null },
-  { label: "Roadmap", href: "/roadmap", description: "Academic mission control", status: "Live" },
-  { label: "Courses", href: "/courses", description: "UMGC course workspace", status: "Live" },
-  { label: "Planner", href: "/planner", description: "UMGC semester command", status: "Live" },
-  { label: "Library", href: "/library", description: "Notes and integrity scanner", status: "Live" },
-  { label: "Sandbox", href: "/sandbox", description: "Cyber scenario training", status: "Live" },
-  { label: "Resources", href: "/resources", description: "Course materials and references", status: "Live" },
+  { icon: "🏠", label: "Home", href: "/", description: "Private academic workspace", badge: null },
+  {
+    icon: "✍️",
+    label: "Workspace",
+    href: "/workspace",
+    description: "Paste · Get Answer · Submit",
+    badge: "Start Here",
+  },
+  { icon: "🗺️", label: "Roadmap", href: "/roadmap", description: "Academic mission control", badge: "Live" },
+  { icon: "🎓", label: "Courses", href: "/courses", description: "UMGC course workspace", badge: "Live" },
+  { icon: "📅", label: "Planner", href: "/planner", description: "UMGC semester command", badge: "Live" },
+  { icon: "📚", label: "Library", href: "/library", description: "Notes and integrity scanner", badge: "Live" },
+  { icon: "🛡️", label: "Sandbox", href: "/sandbox", description: "Cyber scenario training", badge: "Live" },
+  { icon: "🧭", label: "Resources", href: "/resources", description: "Course materials and references", badge: "Live" },
 ];
 
 export function Sidebar() {
@@ -98,10 +105,15 @@ export function Sidebar() {
               }`}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-text">{item.label}</div>
-                {item.status ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-base" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <div className="text-sm font-semibold text-text">{item.label}</div>
+                </div>
+                {item.badge ? (
                   <span className="rounded-full border border-accent/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-accent">
-                    {item.status}
+                    {item.badge}
                   </span>
                 ) : null}
               </div>
