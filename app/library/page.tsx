@@ -18,6 +18,7 @@ const libraryFilters: { label: string; value: "all" | LibraryEntryType }[] = [
   { label: "Professor Sessions", value: "professor-session" },
   { label: "Quiz Reviews", value: "quiz-review" },
   { label: "Saved Drafts", value: "saved-draft" },
+  { label: "Research", value: "research" },
 ];
 
 const typeLabels: Record<LibraryEntryType, string> = {
@@ -25,6 +26,7 @@ const typeLabels: Record<LibraryEntryType, string> = {
   "professor-session": "Professor Session",
   "quiz-review": "Quiz Review",
   "saved-draft": "Saved Draft",
+  research: "Research",
 };
 
 export default function LibraryPage() {

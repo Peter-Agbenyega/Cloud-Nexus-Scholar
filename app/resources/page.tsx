@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { SkillsPanel } from "@/components/skills-panel";
 import {
   ACTIVE_SYLLABUS_COURSES,
   CLCS605_COURSE,
@@ -281,6 +282,41 @@ export default function ResourcesPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="space-y-6 rounded-card border border-border/70 bg-panel/80 p-6">
+        <div>
+          <h2 className="text-2xl font-semibold text-text">
+            UMGC Skills Framework — What You Are Building Toward
+          </h2>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("clcs605")}
+            className={`rounded-full border px-4 py-2 text-sm transition ${
+              activeTab === "clcs605"
+                ? "border-accent bg-accent/10 text-text"
+                : "border-border/70 bg-panelAlt/50 text-muted hover:border-accent/35 hover:text-text"
+            }`}
+          >
+            CLCS 605
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("clcs615")}
+            className={`rounded-full border px-4 py-2 text-sm transition ${
+              activeTab === "clcs615"
+                ? "border-accent bg-accent/10 text-text"
+                : "border-border/70 bg-panelAlt/50 text-muted hover:border-accent/35 hover:text-text"
+            }`}
+          >
+            CLCS 615
+          </button>
+        </div>
+
+        <SkillsPanel courseCode={activeTab === "clcs605" ? "CLCS 605" : "CLCS 615"} />
       </section>
     </div>
   );
