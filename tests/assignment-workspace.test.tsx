@@ -5,6 +5,7 @@ import { AssignmentWorkspace } from "@/components/assignment-workspace";
 import { AssignmentRecord, ComplianceReport } from "@/lib/types";
 
 const mockGenerateAcademicDraft = vi.fn();
+const mockFormatSubmissionDraft = vi.fn();
 const mockGetAssignmentRecord = vi.fn();
 const mockMarkAssignmentSubmitted = vi.fn();
 const mockPatchAssignmentRecord = vi.fn();
@@ -38,6 +39,7 @@ vi.mock("@/lib/assignment-agent", async () => {
   return {
     ...actual,
     generateAcademicDraft: (...args: unknown[]) => mockGenerateAcademicDraft(...args),
+    formatSubmissionDraft: (...args: unknown[]) => mockFormatSubmissionDraft(...args),
   };
 });
 
@@ -47,17 +49,49 @@ function buildComplianceReport(overrides: Partial<ComplianceReport> = {}): Compl
     wordCount: 340,
     wordCountRequirement: "300-400",
     wordCountPass: true,
-    citationPass: true,
-    apaReferencePass: true,
-    promptCoveragePass: true,
-    deliverablesPass: true,
-    rubricAlignment: "Strong",
-    genericWritingPass: true,
+    headerPass: true,
+    citationReferencePass: true,
+    apa7Pass: true,
+    sourceRecencyPass: true,
+    turnitinSafePass: true,
     peerReplyReadinessPass: true,
-    practicalEvidencePass: true,
+    tonePass: true,
+    humanizationPass: true,
+    promptCoveragePass: true,
+    rubricPass: true,
+    citationAudit: {
+      inTextCitations: [],
+      referenceEntries: [],
+      orphanCitations: [],
+      orphanReferences: [],
+      pass: true,
+    },
+    apaValidation: {
+      pass: true,
+      issues: [],
+      inTextCitationPass: true,
+      referenceSectionPass: true,
+      doiFormattingPass: true,
+    },
+    sourceAudit: {
+      currentYearThreshold: 2021,
+      recentReferenceCount: 1,
+      mostRecentYear: 2024,
+      outdatedReferences: [],
+      pass: true,
+    },
+    humanizationReport: {
+      pass: true,
+      aiScore: 14,
+      replacedPhrases: [],
+      duplicateParagraphs: [],
+      toneNotes: [],
+    },
+    rubricChecklist: [],
+    readinessScore: 100,
     missingItems: [],
     warnings: [],
-    nextAction: "Submit the assignment",
+    nextAction: "Submit the assignment.",
     ...overrides,
   };
 }
@@ -69,19 +103,33 @@ function buildRecord(overrides: Partial<AssignmentRecord> = {}): AssignmentRecor
     unit: "Unit 1",
     title: "Unit 1 Discussion",
     type: "discussion",
-    prompt: "CLCS 605 Unit 1 Discussion\nInitial post: 300-400 words\nInclude one APA citation.",
-    rubric: "communication: 10",
+    prompt: `COURSE: CLCS 605
+UNIT: Unit 1
+PROFESSOR: Dr. Smith
+DUE: Sunday 11:59 PM ET
+TYPE: Discussion
+WORD COUNT: 300-400 words
+
+ASSIGNMENT INSTRUCTIONS:
+Discuss the topic and connect it to your work.
+
+RUBRIC:
+Communication: 10 points
+
+SPECIAL REQUIREMENTS:
+Include one APA citation.`,
+    rubric: "Communication: 10 points",
     dueDate: "2099-05-14T23:59:00.000Z",
     wordCountMin: 300,
     wordCountMax: 400,
     citationsRequired: true,
     apaRequired: true,
     practicalRequired: false,
-    requiredDeliverables: ["include one APA citation."],
+    requiredDeliverables: ["include one apa citation."],
     requiredSections: [],
     rubricCriteria: ["communication"],
     status: "ready_to_submit",
-    readinessScore: 96,
+    readinessScore: 100,
     warnings: [],
     missingItems: [],
     finalDraft: "Stored final draft",
@@ -93,14 +141,14 @@ function buildRecord(overrides: Partial<AssignmentRecord> = {}): AssignmentRecor
       unit: "Unit 1",
       type: "discussion",
       title: "Unit 1 Discussion",
-      prompt: "CLCS 605 Unit 1 Discussion\nInitial post: 300-400 words\nInclude one APA citation.",
-      rubric: "communication: 10",
+      prompt: "Template prompt",
+      rubric: "Communication: 10 points",
       initialPostWordCount: "300-400 words",
       peerRepliesRequired: 0,
       citationRequired: true,
       apaReferenceRequired: true,
       requiredSections: [],
-      requiredDeliverables: ["include one APA citation."],
+      requiredDeliverables: ["include one apa citation."],
       rubricCriteria: ["communication"],
       practicalRequired: false,
       practicalEvidenceItems: [],
@@ -127,6 +175,7 @@ describe("AssignmentWorkspace", () => {
     mockPatchAssignmentRecord.mockImplementation(() => buildRecord());
     mockMarkAssignmentSubmitted.mockImplementation(() => buildRecord({ status: "submitted" }));
     mockGenerateAcademicDraft.mockResolvedValue("Generated academic draft");
+    mockFormatSubmissionDraft.mockResolvedValue("Generated academic draft");
   });
 
   it("loads stored assignment state into the workspace", async () => {
@@ -145,13 +194,11 @@ describe("AssignmentWorkspace", () => {
     );
 
     expect(await screen.findByText("Unit 1 Discussion")).toBeInTheDocument();
-    expect(screen.getByText("Ready to submit")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Draft" }));
-    expect(screen.getByDisplayValue("Stored final draft")).toBeInTheDocument();
     expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Stored final draft")).toBeInTheDocument();
   });
 
-  it("runs the prompt parsing step and notifies the parent", async () => {
+  it("saves the complete template back to the store", async () => {
     const onAssignmentUpdate = vi.fn();
 
     render(
@@ -169,16 +216,15 @@ describe("AssignmentWorkspace", () => {
       }),
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Run Assignment Intelligence Engine" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save Template to Workspace" }));
 
     await waitFor(() => {
       expect(mockUpdateAssignmentFromPrompt).toHaveBeenCalledWith(
         "assignment-1",
-        expect.stringContaining("CLCS 605 Unit 1 Discussion"),
+        expect.stringContaining("COURSE: CLCS 605"),
         expect.any(String),
       );
     });
-    expect(mockSaveDraftAndCompliance).toHaveBeenCalled();
     expect(onAssignmentUpdate).toHaveBeenCalled();
   });
 
@@ -197,8 +243,7 @@ describe("AssignmentWorkspace", () => {
       }),
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Draft" }));
-    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Generate Draft" }));
 
     await waitFor(() => {
       expect(mockGenerateAcademicDraft).toHaveBeenCalledWith({
@@ -215,7 +260,7 @@ describe("AssignmentWorkspace", () => {
       "Generated academic draft",
       "draft_started",
     );
-    expect(await screen.findByText("Submission readiness panel")).toBeInTheDocument();
+    expect(await screen.findByText("Rubric checklist")).toBeInTheDocument();
     expect(screen.getByTestId("writing-scanner")).toBeInTheDocument();
   });
 });

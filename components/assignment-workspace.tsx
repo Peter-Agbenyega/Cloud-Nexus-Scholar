@@ -2,16 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { PromptInputTemplate } from "@/components/prompt-input-template";
 import { TutorPanel } from "@/components/tutor-panel";
 import { WritingScanner } from "@/components/writing-scanner";
 import {
-  calculateReadinessScore,
   countWords,
+  formatSubmissionDraft,
   generateAcademicDraft,
   generateSubmissionComment,
   parseAssignmentPrompt,
   runComplianceCheck,
 } from "@/lib/assignment-agent";
+import {
+  EMPTY_PROMPT_TEMPLATE,
+  buildPromptTemplateInput,
+  isPromptTemplateComplete,
+  parsePromptTemplate,
+} from "@/lib/prompt-template";
 import {
   getAssignmentRecord,
   markAssignmentSubmitted,
@@ -21,7 +28,7 @@ import {
 } from "@/lib/assignment-store";
 import { appendActivityEvent } from "@/lib/app-state";
 import { SyllabusAssignmentType } from "@/lib/syllabus-data";
-import { AssignmentOutputMode, AssignmentRecord, ComplianceReport } from "@/lib/types";
+import { AssignmentOutputMode, AssignmentRecord, ComplianceReport, ParsedPromptTemplate } from "@/lib/types";
 
 type AssignmentWorkspaceProps = {
   assignmentId: string;
@@ -37,7 +44,7 @@ type AssignmentWorkspaceProps = {
   onAssignmentUpdate?: (record: AssignmentRecord) => void;
 };
 
-type WorkspaceTab = "intelligence" | "draft" | "compliance" | "submit";
+type WorkspaceTab = "draft" | "compliance" | "submit";
 
 const modeOptions: Array<{ value: AssignmentOutputMode; label: string }> = [
   { value: "initial_post", label: "Initial Post" },
@@ -45,8 +52,18 @@ const modeOptions: Array<{ value: AssignmentOutputMode; label: string }> = [
   { value: "outline", label: "Outline" },
   { value: "rubric_cleanup", label: "Rubric Cleanup" },
   { value: "apa_reference_cleanup", label: "APA Cleanup" },
-  { value: "submission_comment", label: "Submission Comment" },
 ];
+
+const complianceGrid = [
+  { key: "wordCountPass", label: "Word Count" },
+  { key: "headerPass", label: "Header Block" },
+  { key: "citationReferencePass", label: "Citations Match" },
+  { key: "apa7Pass", label: "APA 7" },
+  { key: "sourceRecencyPass", label: "Source Recency" },
+  { key: "turnitinSafePass", label: "Turnitin Safe" },
+  { key: "promptCoveragePass", label: "Prompt Coverage" },
+  { key: "rubricPass", label: "Rubric Coverage" },
+] satisfies Array<{ key: keyof ComplianceReport; label: string }>;
 
 function getTypeLabel(type: SyllabusAssignmentType) {
   if (type === "discussion") return "Discussion";
@@ -63,38 +80,9 @@ function getStatusTone(status?: string) {
     case "peer_replies_needed":
       return "border-amber-400/35 bg-amber-500/10 text-amber-100";
     case "overdue":
-    case "practical_needed":
       return "border-rose-400/35 bg-rose-500/10 text-rose-100";
-    case "draft_started":
-    case "quiz_pending":
-      return "border-sky-400/35 bg-sky-500/10 text-sky-100";
     default:
       return "border-border/70 bg-panel/70 text-muted";
-  }
-}
-
-function getSignalLabel(status?: string) {
-  switch (status) {
-    case "not_started":
-      return "Not started";
-    case "draft_started":
-      return "Draft started";
-    case "needs_revision":
-      return "Needs revision";
-    case "ready_to_submit":
-      return "Ready to submit";
-    case "submitted":
-      return "Submitted";
-    case "peer_replies_needed":
-      return "Peer replies needed";
-    case "overdue":
-      return "Overdue";
-    case "quiz_pending":
-      return "Quiz pending";
-    case "practical_needed":
-      return "Practical evidence needed";
-    default:
-      return "Not started";
   }
 }
 
@@ -108,13 +96,39 @@ function formatRubricText(rubric?: Record<string, number>) {
     .join("\n");
 }
 
-function formatDate(value?: string) {
-  return value || "Check assignment prompt";
+function buildInitialTemplate(args: {
+  courseCode: string;
+  type: SyllabusAssignmentType;
+  wordCount?: string;
+  dueDate?: string;
+  description: string;
+  rubricText: string;
+  existingPrompt?: string;
+}): ParsedPromptTemplate {
+  const parsed = args.existingPrompt ? parsePromptTemplate(args.existingPrompt) : EMPTY_PROMPT_TEMPLATE;
+
+  return {
+    course: parsed.course || args.courseCode,
+    unit: parsed.unit,
+    professor: parsed.professor,
+    due: parsed.due || args.dueDate || "",
+    type: parsed.type || getTypeLabel(args.type),
+    wordCount: parsed.wordCount || args.wordCount || "",
+    assignmentInstructions: parsed.assignmentInstructions || args.description,
+    rubric: parsed.rubric || args.rubricText,
+    specialRequirements: parsed.specialRequirements,
+  };
 }
 
-function getWordCountTone(report?: ComplianceReport | null) {
-  if (!report) return "text-muted";
-  return report.wordCountPass ? "text-emerald-200" : "text-amber-200";
+function copyToClipboard(value: string) {
+  if (typeof window === "undefined" || !window.navigator?.clipboard) {
+    return Promise.resolve(false);
+  }
+
+  return window.navigator.clipboard
+    .writeText(value)
+    .then(() => true)
+    .catch(() => false);
 }
 
 export function AssignmentWorkspace({
@@ -130,22 +144,30 @@ export function AssignmentWorkspace({
   dueDate,
   onAssignmentUpdate,
 }: AssignmentWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("intelligence");
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("draft");
   const [assignmentRecord, setAssignmentRecord] = useState<AssignmentRecord | null>(null);
-  const [promptInput, setPromptInput] = useState("");
-  const [rubricInput, setRubricInput] = useState(formatRubricText(rubric));
+  const [templateInput, setTemplateInput] = useState<ParsedPromptTemplate>(
+    buildInitialTemplate({
+      courseCode,
+      type,
+      wordCount,
+      dueDate,
+      description,
+      rubricText: formatRubricText(rubric),
+    }),
+  );
   const [draft, setDraft] = useState("");
   const [generationMode, setGenerationMode] = useState<AssignmentOutputMode>(
     type === "discussion" ? "initial_post" : "full_assignment",
   );
   const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
-  const [reviewScanKey, setReviewScanKey] = useState(0);
   const [submissionComment, setSubmissionComment] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"" | "markdown" | "leo">("");
 
   useEffect(() => {
     const existing = getAssignmentRecord(assignmentId);
@@ -153,24 +175,34 @@ export function AssignmentWorkspace({
       return;
     }
 
+    const rubricText = existing.rubric || formatRubricText(rubric);
+
     setAssignmentRecord(existing);
-    setPromptInput(existing.prompt || description);
-    setRubricInput(existing.rubric || formatRubricText(rubric));
+    setTemplateInput(
+      buildInitialTemplate({
+        courseCode,
+        type,
+        wordCount,
+        dueDate,
+        description,
+        rubricText,
+        existingPrompt: existing.prompt,
+      }),
+    );
     setDraft(existing.finalDraft || "");
     setComplianceReport(existing.lastComplianceReport || null);
     setSubmissionComment(existing.submissionComment || "");
-  }, [assignmentId, description, rubric]);
+  }, [assignmentId, courseCode, description, dueDate, rubric, type, wordCount]);
 
+  const compiledPrompt = useMemo(() => buildPromptTemplateInput(templateInput), [templateInput]);
   const profile = useMemo(
-    () => parseAssignmentPrompt(promptInput || description, rubricInput),
-    [description, promptInput, rubricInput],
+    () => parseAssignmentPrompt(compiledPrompt, templateInput.rubric),
+    [compiledPrompt, templateInput.rubric],
   );
-
-  const wordCountValue = useMemo(() => countWords(draft), [draft]);
-  const readinessScore = complianceReport
-    ? calculateReadinessScore(complianceReport)
-    : assignmentRecord?.readinessScore ?? 0;
-  const statusLabel = getSignalLabel(assignmentRecord?.status);
+  const templateComplete = isPromptTemplateComplete(templateInput);
+  const wordCountValue = countWords(draft);
+  const aiScore = complianceReport?.humanizationReport.aiScore ?? 0;
+  const readinessScore = complianceReport?.readinessScore ?? assignmentRecord?.readinessScore ?? 0;
 
   function syncRecord(nextRecord: AssignmentRecord | null, action?: string) {
     if (!nextRecord) {
@@ -188,74 +220,46 @@ export function AssignmentWorkspace({
     }
   }
 
-  async function handleParsePrompt() {
+  async function handleImportTemplate() {
     setIsParsing(true);
     setError(null);
 
     try {
-      const nextRecord = updateAssignmentFromPrompt(assignmentId, promptInput, rubricInput);
+      const nextRecord = updateAssignmentFromPrompt(assignmentId, compiledPrompt, templateInput.rubric);
       if (!nextRecord) {
         throw new Error("Could not update the assignment profile.");
       }
 
-      const withCompliance = saveDraftAndCompliance(assignmentId, draft);
-      syncRecord(withCompliance ?? nextRecord, `Updated assignment profile for ${title}`);
-      setActiveTab("draft");
-    } catch (parseError) {
-      setError(parseError instanceof Error ? parseError.message : "Prompt parsing failed.");
+      syncRecord(nextRecord, `Updated strict template for ${title}`);
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Template import failed.");
     } finally {
       setIsParsing(false);
     }
   }
 
   async function handleGenerate(modeOverride?: AssignmentOutputMode) {
+    if (!templateComplete) {
+      setError("Complete every template field before generation.");
+      return;
+    }
+
     setError(null);
     setIsGenerating(true);
     const modeToUse = modeOverride ?? generationMode;
 
     try {
-      if (modeToUse === "submission_comment") {
-        const comment = generateSubmissionComment(
-          assignmentRecord ?? {
-            id: assignmentId,
-            course: courseCode,
-            unit: profile.unit,
-            title,
-            type,
-            prompt: promptInput,
-            rubric: rubricInput,
-            dueDate: dueDate || "",
-            citationsRequired: profile.citationRequired,
-            apaRequired: profile.apaReferenceRequired,
-            practicalRequired: profile.practicalRequired,
-            requiredDeliverables: profile.requiredDeliverables,
-            requiredSections: profile.requiredSections,
-            rubricCriteria: profile.rubricCriteria,
-            status: "draft_started",
-            readinessScore: 0,
-            warnings: [],
-            missingItems: [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        );
-        setSubmissionComment(comment);
-        const nextRecord = patchAssignmentRecord(assignmentId, { submissionComment: comment });
-        syncRecord(nextRecord ?? assignmentRecord, "Generated submission comment");
-        return;
-      }
-
-      const nextDraft = await generateAcademicDraft({
+      const rawDraft = await generateAcademicDraft({
         profile,
         draftText: draft,
         mode: modeToUse,
       });
-      setDraft(nextDraft);
+      const formattedDraft = await formatSubmissionDraft(profile, rawDraft);
+      setDraft(formattedDraft);
 
-      const nextRecord = saveDraftAndCompliance(assignmentId, nextDraft, "draft_started");
+      const nextRecord = saveDraftAndCompliance(assignmentId, formattedDraft, "draft_started");
       syncRecord(nextRecord, `Generated ${modeToUse.replaceAll("_", " ")} for ${title}`);
       setActiveTab("compliance");
-      setReviewScanKey(Date.now());
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : "Generation failed.");
     } finally {
@@ -263,28 +267,40 @@ export function AssignmentWorkspace({
     }
   }
 
-  function handleRunComplianceCheck() {
-    setError(null);
-    const nextRecord = saveDraftAndCompliance(assignmentId, draft);
-
-    if (!nextRecord) {
-      const adHocReport = runComplianceCheck(profile, draft);
-      setComplianceReport(adHocReport);
-      return;
-    }
-
-    syncRecord(nextRecord, `Ran compliance check for ${title}`);
-  }
-
   function handleSaveDraft(nextDraft: string) {
     setDraft(nextDraft);
     setIsSaving(true);
 
     window.setTimeout(() => {
-      const nextRecord = saveDraftAndCompliance(assignmentId, nextDraft, nextDraft.trim() ? "draft_started" : "not_started");
+      const nextRecord = saveDraftAndCompliance(
+        assignmentId,
+        nextDraft,
+        nextDraft.trim() ? "draft_started" : "not_started",
+      );
       syncRecord(nextRecord ?? assignmentRecord, undefined);
       setIsSaving(false);
     }, 150);
+  }
+
+  function handleRunComplianceCheck() {
+    setError(null);
+    const nextRecord = saveDraftAndCompliance(assignmentId, draft);
+
+    if (!nextRecord) {
+      setComplianceReport(runComplianceCheck(profile, draft));
+      return;
+    }
+
+    syncRecord(nextRecord, `Ran strict compliance check for ${title}`);
+  }
+
+  async function handleCopy(kind: "markdown" | "leo") {
+    const text = kind === "markdown" ? draft : draft.replace(/\n{3,}/g, "\n\n");
+    const ok = await copyToClipboard(text);
+    setCopyState(ok ? kind : "");
+    if (ok) {
+      window.setTimeout(() => setCopyState(""), 1800);
+    }
   }
 
   function handleMarkSubmitted() {
@@ -293,8 +309,36 @@ export function AssignmentWorkspace({
   }
 
   function handleGenerateSubmissionComment() {
-    setGenerationMode("submission_comment");
-    void handleGenerate("submission_comment");
+    const comment = generateSubmissionComment(
+      assignmentRecord ?? {
+        id: assignmentId,
+        course: courseCode,
+        unit: profile.unit,
+        title,
+        type,
+        prompt: compiledPrompt,
+        rubric: templateInput.rubric,
+        dueDate: dueDate || "",
+        citationsRequired: profile.citationRequired,
+        apaRequired: profile.apaReferenceRequired,
+        practicalRequired: profile.practicalRequired,
+        requiredDeliverables: profile.requiredDeliverables,
+        requiredSections: profile.requiredSections,
+        rubricCriteria: profile.rubricCriteria,
+        status: "draft_started",
+        readinessScore: 0,
+        warnings: [],
+        missingItems: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    );
+
+    setSubmissionComment(comment);
+    const nextRecord = patchAssignmentRecord(assignmentId, { submissionComment: comment });
+    if (nextRecord) {
+      syncRecord(nextRecord, "Generated submission comment");
+    }
   }
 
   const tabButtonClass = (tab: WorkspaceTab) =>
@@ -308,7 +352,7 @@ export function AssignmentWorkspace({
     <section className="space-y-6 rounded-card border border-border/70 bg-panel/85 p-6 shadow-card">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.24em] text-accent">Assignment command center</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-accent">Strict submission controller</div>
           <h2 className="mt-2 text-2xl font-semibold text-text">{title}</h2>
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
             <span className="rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-text">
@@ -316,9 +360,9 @@ export function AssignmentWorkspace({
             </span>
             <span className="rounded-full border border-border/70 px-3 py-1">{points} points</span>
             {wordCount ? <span className="rounded-full border border-border/70 px-3 py-1">{wordCount}</span> : null}
-            <span className="rounded-full border border-border/70 px-3 py-1">Due: {formatDate(dueDate)}</span>
+            <span className="rounded-full border border-border/70 px-3 py-1">Due: {dueDate || "Check prompt"}</span>
             <span className={`rounded-full border px-3 py-1 ${getStatusTone(assignmentRecord?.status)}`}>
-              {statusLabel}
+              {assignmentRecord?.status?.replaceAll("_", " ") || "not started"}
             </span>
           </div>
         </div>
@@ -335,24 +379,9 @@ export function AssignmentWorkspace({
             />
           </div>
           <div className="mt-3 text-sm text-muted">
-            {complianceReport?.nextAction || assignmentRecord?.missingItems[0] || "Import the full assignment prompt to start the intelligence engine."}
+            {complianceReport?.nextAction || "Complete the template, generate the draft, then clear the compliance gates."}
           </div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => setActiveTab("intelligence")} className={tabButtonClass("intelligence")}>
-          Intelligence
-        </button>
-        <button type="button" onClick={() => setActiveTab("draft")} className={tabButtonClass("draft")}>
-          Draft
-        </button>
-        <button type="button" onClick={() => setActiveTab("compliance")} className={tabButtonClass("compliance")}>
-          Compliance
-        </button>
-        <button type="button" onClick={() => setActiveTab("submit")} className={tabButtonClass("submit")}>
-          Submit
-        </button>
       </div>
 
       {error ? (
@@ -367,99 +396,99 @@ export function AssignmentWorkspace({
         </div>
       ) : null}
 
-      {activeTab === "intelligence" ? (
+      <PromptInputTemplate value={templateInput} onChange={setTemplateInput} />
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void handleImportTemplate()}
+          disabled={isParsing || !templateComplete}
+          className="rounded-full border border-accent bg-accent px-5 py-2 text-sm font-semibold text-slate-950 transition disabled:cursor-not-allowed disabled:border-border disabled:bg-panel disabled:text-muted"
+        >
+          {isParsing ? "Saving Template..." : "Save Template to Workspace"}
+        </button>
+        <span className="text-sm text-muted">
+          {templateComplete ? "Template complete. Generation unlocked." : "All nine template fields are required."}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => setActiveTab("draft")} className={tabButtonClass("draft")}>
+          Draft
+        </button>
+        <button type="button" onClick={() => setActiveTab("compliance")} className={tabButtonClass("compliance")}>
+          Compliance Report
+        </button>
+        <button type="button" onClick={() => setActiveTab("submit")} className={tabButtonClass("submit")}>
+          Submit
+        </button>
+      </div>
+
+      {activeTab === "draft" ? (
         <div className="space-y-6">
-          <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted">Assignment prompt import</div>
-              <p className="mt-3 text-sm leading-7 text-muted">
-                Paste the full assignment prompt or discussion instructions here. This engine extracts word count, deliverables, due dates, citation rules, rubric clues, and whether peer posts or screenshots are still needed.
-              </p>
-              <textarea
-                value={promptInput}
-                onChange={(event) => setPromptInput(event.target.value)}
-                className="mt-4 min-h-[220px] w-full rounded-3xl border border-border/70 bg-panel/70 px-4 py-4 text-sm leading-7 text-text outline-none transition focus:border-accent"
-                placeholder="Paste the full assignment prompt..."
-              />
-              <textarea
-                value={rubricInput}
-                onChange={(event) => setRubricInput(event.target.value)}
-                className="mt-4 min-h-[120px] w-full rounded-3xl border border-border/70 bg-panel/70 px-4 py-4 text-sm leading-7 text-text outline-none transition focus:border-accent"
-                placeholder="Paste rubric details if provided..."
-              />
-              <div className="mt-4 flex flex-wrap gap-3">
+          <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-[0.18em] text-muted">Draft control</div>
+                <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                  <span className="rounded-full border border-border/70 px-3 py-1 text-text">
+                    {wordCountValue} words
+                  </span>
+                  <span className="rounded-full border border-border/70 px-3 py-1 text-text">
+                    Target {profile.initialPostWordCount || "not stated"}
+                  </span>
+                  <span
+                    className={`rounded-full border px-3 py-1 ${
+                      aiScore < 20
+                        ? "border-emerald-400/35 bg-emerald-500/10 text-emerald-100"
+                        : "border-amber-400/35 bg-amber-500/10 text-amber-100"
+                    }`}
+                  >
+                    AI score {aiScore}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  value={generationMode}
+                  onChange={(event) => setGenerationMode(event.target.value as AssignmentOutputMode)}
+                  className="rounded-2xl border border-border/70 bg-panel/70 px-3 py-2 text-sm text-text outline-none transition focus:border-accent"
+                >
+                  {modeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
-                  onClick={handleParsePrompt}
-                  disabled={isParsing || !promptInput.trim()}
+                  onClick={() => void handleGenerate()}
+                  disabled={isGenerating || !templateComplete}
                   className="rounded-full border border-accent bg-accent px-5 py-2 text-sm font-semibold text-slate-950 transition disabled:cursor-not-allowed disabled:border-border disabled:bg-panel disabled:text-muted"
                 >
-                  {isParsing ? "Parsing..." : "Run Assignment Intelligence Engine"}
+                  {isGenerating ? "Generating..." : "Generate Draft"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRunComplianceCheck}
+                  className="rounded-full border border-border/70 bg-panel/70 px-5 py-2 text-sm text-muted transition hover:border-accent/35 hover:text-text"
+                >
+                  Run Compliance
                 </button>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
-                <div className="text-xs uppercase tracking-[0.18em] text-muted">Prompt summary</div>
-                <div className="mt-4 space-y-3 text-sm">
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted">Course / Unit</span>
-                    <span className="text-text">{profile.course || courseCode} {profile.unit || ""}</span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted">Type</span>
-                    <span className="text-text">{profile.type}</span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted">Initial post words</span>
-                    <span className="text-text">{profile.initialPostWordCount || "Not stated"}</span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted">Peer replies</span>
-                    <span className="text-text">
-                      {profile.peerRepliesRequired > 0
-                        ? `${profile.peerRepliesRequired} required${profile.peerReplyWordCount ? ` · ${profile.peerReplyWordCount}` : ""}`
-                        : "None stated"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted">Citations / APA</span>
-                    <span className="text-text">
-                      {profile.citationRequired ? "Citation required" : "Citation not stated"} ·{" "}
-                      {profile.apaReferenceRequired ? "APA required" : "APA not stated"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted">Practical evidence</span>
-                    <span className="text-text">
-                      {profile.practicalRequired ? profile.practicalEvidenceItems.join(", ") : "Not required"}
-                    </span>
-                  </div>
-                </div>
-              </div>
+            <textarea
+              value={draft}
+              onChange={(event) => handleSaveDraft(event.target.value)}
+              placeholder="Formatted draft appears here after generation."
+              className="mt-5 min-h-[420px] w-full rounded-3xl border border-border/70 bg-panel/70 px-4 py-4 text-sm leading-7 text-text outline-none transition focus:border-accent"
+            />
 
-              <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
-                <div className="text-xs uppercase tracking-[0.18em] text-muted">Required deliverables</div>
-                <div className="mt-4 space-y-2">
-                  {(profile.requiredDeliverables.length > 0 ? profile.requiredDeliverables : ["No explicit deliverables extracted yet"]).map((item) => (
-                    <div key={item} className="rounded-2xl border border-border/70 bg-panel/60 px-4 py-3 text-sm text-text">
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
-                <div className="text-xs uppercase tracking-[0.18em] text-muted">Rubric checklist</div>
-                <div className="mt-4 space-y-2">
-                  {(profile.rubricCriteria.length > 0 ? profile.rubricCriteria : ["No rubric criteria parsed yet"]).map((item) => (
-                    <div key={item} className="rounded-2xl border border-border/70 bg-panel/60 px-4 py-3 text-sm text-text">
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
+              <span>{isSaving ? "Saving draft..." : "Draft saved locally"}</span>
+              <span>{profile.type === "discussion" ? "AI attribution is appended automatically for discussions." : "Header is injected automatically for assignment drafts."}</span>
             </div>
           </div>
 
@@ -468,150 +497,112 @@ export function AssignmentWorkspace({
             courseName={courseName}
             topicTitle={title}
             initialMode={type === "discussion" ? "discussion" : "assignment"}
-            unitContext={promptInput || description}
-            initialPrompt={`I reviewed the ${title} assignment prompt. Help me think through the required sections, what examples from my AWS or DevSecOps work fit naturally, and where I need stronger evidence.`}
+            unitContext={compiledPrompt}
+            initialPrompt={`Use this prompt template to help me cover every section, map evidence to the rubric, and keep the tone natural and direct.`}
             initialPromptMode={type === "discussion" ? "discussion" : "assignment"}
           />
         </div>
       ) : null}
 
-      {activeTab === "draft" ? (
-        <div className="space-y-5 rounded-card border border-border/70 bg-panelAlt/55 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-muted">Human Academic Writing Engine</div>
-              <div className={`mt-2 text-sm ${getWordCountTone(complianceReport)}`}>
-                {wordCountValue} words{profile.initialPostWordCount ? ` · target ${profile.initialPostWordCount}` : ""}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <select
-                value={generationMode}
-                onChange={(event) => setGenerationMode(event.target.value as AssignmentOutputMode)}
-                className="rounded-2xl border border-border/70 bg-panel/70 px-3 py-2 text-sm text-text outline-none transition focus:border-accent"
-              >
-                {modeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => void handleGenerate()}
-                disabled={isGenerating}
-                className="rounded-full border border-accent bg-accent px-5 py-2 text-sm font-semibold text-slate-950 transition disabled:cursor-not-allowed disabled:border-border disabled:bg-panel disabled:text-muted"
-              >
-                {isGenerating ? "Generating..." : "Generate"}
-              </button>
-              <button
-                type="button"
-                onClick={handleRunComplianceCheck}
-                className="rounded-full border border-border/70 bg-panel/70 px-5 py-2 text-sm text-muted transition hover:border-accent/35 hover:text-text"
-              >
-                Compliance Check
-              </button>
-            </div>
-          </div>
-
-          <textarea
-            value={draft}
-            onChange={(event) => handleSaveDraft(event.target.value)}
-            placeholder="Final copy-ready answer appears here..."
-            className="min-h-[360px] w-full rounded-3xl border border-border/70 bg-panel/70 px-4 py-4 text-sm leading-7 text-text outline-none transition focus:border-accent"
-          />
-
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
-            <span>{isSaving ? "Saving draft..." : "Draft saved locally"}</span>
-            <span>{profile.apaReferenceRequired ? "APA references expected" : "APA optional unless prompt says otherwise"}</span>
-          </div>
-        </div>
-      ) : null}
-
       {activeTab === "compliance" ? (
         <div className="space-y-6">
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-            <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted">Submission readiness panel</div>
-              <div className="mt-4 space-y-3 text-sm">
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted">Status</span>
-                  <span className="text-text">{complianceReport?.status || "Run compliance check"}</span>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {complianceGrid.map((item) => {
+              const pass = Boolean(complianceReport?.[item.key]);
+              return (
+                <div key={item.key} className="rounded-card border border-border/70 bg-panelAlt/55 p-4">
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted">{item.label}</div>
+                  <div
+                    className={`mt-3 text-sm ${
+                      pass ? "text-emerald-200" : "text-amber-200"
+                    }`}
+                  >
+                    {complianceReport ? (pass ? "Pass" : "Fail") : "Not checked"}
+                  </div>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted">Word count</span>
-                  <span className="text-text">
-                    {complianceReport ? `${complianceReport.wordCount} / ${complianceReport.wordCountRequirement}` : "Not checked"}
-                  </span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted">Citation check</span>
-                  <span className="text-text">{complianceReport ? (complianceReport.citationPass ? "Pass" : "Fail") : "Not checked"}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted">APA check</span>
-                  <span className="text-text">{complianceReport ? (complianceReport.apaReferencePass ? "Pass" : "Fail") : "Not checked"}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted">Rubric alignment</span>
-                  <span className="text-text">{complianceReport?.rubricAlignment || "Not checked"}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted">Next action</span>
-                  <span className="text-text">{complianceReport?.nextAction || "Run the compliance guard"}</span>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+            <div className="space-y-5">
+              <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
+                <div className="text-xs uppercase tracking-[0.18em] text-muted">Rubric checklist</div>
+                <div className="mt-4 space-y-2">
+                  {(complianceReport?.rubricChecklist.length
+                    ? complianceReport.rubricChecklist
+                    : [{ id: "empty", label: "No rubric evaluation yet.", pass: false, detail: "Run compliance after generating or editing the draft." }]).map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-border/70 bg-panel/60 px-4 py-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-text">{item.label}</span>
+                        <span className={item.pass ? "text-emerald-200" : "text-amber-200"}>
+                          {item.pass ? "Pass" : "Fail"}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-muted">{item.detail}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="mt-5 space-y-3">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-muted">Missing items</div>
-                  <div className="mt-2 space-y-2">
-                    {(complianceReport?.missingItems.length ? complianceReport.missingItems : ["No compliance report yet"]).map((item) => (
-                      <div key={item} className="rounded-2xl border border-border/70 bg-panel/60 px-4 py-3 text-sm text-text">
-                        {item}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-muted">Warnings</div>
-                  <div className="mt-2 space-y-2">
-                    {(complianceReport?.warnings.length ? complianceReport.warnings : ["No warnings"]).map((item) => (
-                      <div key={item} className="rounded-2xl border border-border/70 bg-panel/60 px-4 py-3 text-sm text-text">
-                        {item}
-                      </div>
-                    ))}
-                  </div>
+              <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
+                <div className="text-xs uppercase tracking-[0.18em] text-muted">Missing items</div>
+                <div className="mt-4 space-y-2">
+                  {(complianceReport?.missingItems.length
+                    ? complianceReport.missingItems
+                    : ["No missing items reported yet."]).map((item) => (
+                    <div key={item} className="rounded-2xl border border-border/70 bg-panel/60 px-4 py-3 text-sm text-text">
+                      {item}
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="mt-5 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={handleRunComplianceCheck}
-                  className="rounded-full border border-accent bg-accent px-5 py-2 text-sm font-semibold text-slate-950 transition"
-                >
-                  Run Submission Compliance Guard
-                </button>
+              <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
+                <div className="text-xs uppercase tracking-[0.18em] text-muted">Warnings</div>
+                <div className="mt-4 space-y-2">
+                  {(complianceReport?.warnings.length ? complianceReport.warnings : ["No warnings yet."]).map((item) => (
+                    <div key={item} className="rounded-2xl border border-border/70 bg-panel/60 px-4 py-3 text-sm text-text">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-card border border-border/70 bg-panelAlt/55 p-5">
+                <div className="text-xs uppercase tracking-[0.18em] text-muted">Humanization report</div>
+                <div className="mt-4 space-y-2 text-sm text-muted">
+                  <div>AI score: {complianceReport?.humanizationReport.aiScore ?? "Not checked"}</div>
+                  <div>
+                    Replaced phrases:{" "}
+                    {complianceReport?.humanizationReport.replacedPhrases.join(", ") || "None detected"}
+                  </div>
+                  <div>
+                    Duplicate blocks:{" "}
+                    {complianceReport?.humanizationReport.duplicateParagraphs.join(" | ") || "None detected"}
+                  </div>
+                </div>
               </div>
             </div>
 
-            <WritingScanner initialText={draft} autoScanKey={reviewScanKey || assignmentRecord?.updatedAt} />
+            <WritingScanner initialText={draft} autoScanKey={assignmentRecord?.updatedAt || draft} />
           </div>
         </div>
       ) : null}
 
       {activeTab === "submit" ? (
-        <div className="space-y-4 rounded-card border border-border/70 bg-panelAlt/55 p-5">
-          <div className="text-xs uppercase tracking-[0.18em] text-muted">Submission control</div>
+        <div className="space-y-5 rounded-card border border-border/70 bg-panelAlt/55 p-5">
           <div className="grid gap-4 xl:grid-cols-2">
             <div className="rounded-2xl border border-border/70 bg-panel/60 p-4">
-              <div className="text-sm text-text">Required action</div>
+              <div className="text-sm text-text">Submission status</div>
               <div className="mt-2 text-sm leading-7 text-muted">
-                {complianceReport?.nextAction || "Import the prompt, generate the draft, and run the compliance guard."}
+                {complianceReport?.status || "Run compliance before preparing the final copy."}
+              </div>
+              <div className="mt-2 text-sm leading-7 text-muted">
+                {complianceReport?.nextAction || "Complete the draft and clear all strict gates."}
               </div>
             </div>
+
             <div className="rounded-2xl border border-border/70 bg-panel/60 p-4">
               <div className="text-sm text-text">Submission comment</div>
               <textarea
@@ -633,6 +624,22 @@ export function AssignmentWorkspace({
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
+              onClick={() => void handleCopy("markdown")}
+              disabled={!draft.trim()}
+              className="rounded-full border border-border/70 bg-panel/70 px-5 py-2 text-sm text-muted transition hover:border-accent/35 hover:text-text disabled:cursor-not-allowed"
+            >
+              {copyState === "markdown" ? "Copied Markdown" : "Copy Markdown"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCopy("leo")}
+              disabled={!draft.trim()}
+              className="rounded-full border border-border/70 bg-panel/70 px-5 py-2 text-sm text-muted transition hover:border-accent/35 hover:text-text disabled:cursor-not-allowed"
+            >
+              {copyState === "leo" ? "Copied for LEO" : "Copy for LEO"}
+            </button>
+            <button
+              type="button"
               onClick={handleGenerateSubmissionComment}
               className="rounded-full border border-border/70 bg-panel/70 px-5 py-2 text-sm text-muted transition hover:border-accent/35 hover:text-text"
             >
@@ -641,7 +648,7 @@ export function AssignmentWorkspace({
             <button
               type="button"
               onClick={handleMarkSubmitted}
-              disabled={assignmentRecord?.status === "submitted"}
+              disabled={assignmentRecord?.status === "submitted" || complianceReport?.status !== "Ready to submit"}
               className="rounded-full border border-emerald-400/35 bg-emerald-500/10 px-5 py-2 text-sm font-semibold text-emerald-100 transition disabled:cursor-not-allowed disabled:border-border disabled:bg-panel disabled:text-muted"
             >
               {assignmentRecord?.status === "submitted" ? "Submitted" : "Mark Submitted"}

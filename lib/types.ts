@@ -120,6 +120,74 @@ export type AssignmentRequirementChecklistItem = {
   satisfied: boolean;
 };
 
+export type ParsedPromptTemplate = {
+  course: string;
+  unit: string;
+  professor: string;
+  due: string;
+  type: string;
+  wordCount: string;
+  assignmentInstructions: string;
+  rubric: string;
+  specialRequirements: string;
+};
+
+export type RubricCriterion = {
+  id: string;
+  label: string;
+  points?: number;
+  exceedsExpectations: string[];
+  evidenceKeywords: string[];
+};
+
+export type RubricEvaluation = {
+  criterion: RubricCriterion;
+  matchedKeywords: string[];
+  addressed: boolean;
+  exceedsExpectationsPass: boolean;
+  score: number;
+  feedback: string;
+};
+
+export type RubricChecklistItem = {
+  id: string;
+  label: string;
+  pass: boolean;
+  detail: string;
+};
+
+export type CitationAudit = {
+  inTextCitations: string[];
+  referenceEntries: string[];
+  orphanCitations: string[];
+  orphanReferences: string[];
+  pass: boolean;
+};
+
+export type APAValidation = {
+  pass: boolean;
+  issues: string[];
+  inTextCitationPass: boolean;
+  referenceSectionPass: boolean;
+  doiFormattingPass: boolean;
+};
+
+export type SourceAudit = {
+  currentYearThreshold: number;
+  recentReferenceCount: number;
+  mostRecentYear?: number;
+  outdatedReferences: string[];
+  pass: boolean;
+};
+
+export type HumanizationReport = {
+  pass: boolean;
+  aiScore: number;
+  replacedPhrases: string[];
+  duplicateParagraphs: string[];
+  toneNotes: string[];
+};
+
 export type AssignmentProfile = {
   course: string;
   unit: string;
@@ -150,17 +218,25 @@ export type ComplianceReport = {
   wordCount: number;
   wordCountRequirement: string;
   wordCountPass: boolean;
-  citationPass: boolean;
-  apaReferencePass: boolean;
-  promptCoveragePass: boolean;
-  deliverablesPass: boolean;
-  rubricAlignment: "Strong" | "Partial" | "Weak";
-  genericWritingPass: boolean;
+  headerPass: boolean;
+  citationReferencePass: boolean;
+  apa7Pass: boolean;
+  sourceRecencyPass: boolean;
+  turnitinSafePass: boolean;
   peerReplyReadinessPass: boolean;
-  practicalEvidencePass: boolean;
+  tonePass: boolean;
+  humanizationPass: boolean;
+  promptCoveragePass: boolean;
+  rubricPass: boolean;
+  citationAudit: CitationAudit;
+  apaValidation: APAValidation;
+  sourceAudit: SourceAudit;
+  humanizationReport: HumanizationReport;
+  rubricChecklist: RubricChecklistItem[];
+  readinessScore: number;
+  nextAction: string;
   missingItems: string[];
   warnings: string[];
-  nextAction: string;
 };
 
 export type AssignmentRecord = {

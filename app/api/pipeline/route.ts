@@ -163,7 +163,7 @@ async function callPerplexity(topic: string, apiKey: string) {
         {
           role: "system",
           content:
-            "Find authoritative sources for academic use. Return only real URLs from official sources: NIST, AWS docs, IEEE, ACM, peer-reviewed journals. Format: SOURCE: [title] | [url]",
+            "Find authoritative sources for academic use. Return only real URLs. Prioritize sources from 2023-2026, include at least one source from 2024-2026, include at least one peer-reviewed academic source, include at least one official documentation source from AWS, NIST, IEEE, or FFIEC, and never invent citations. Format: SOURCE: [title] | [url]",
         },
         {
           role: "user",

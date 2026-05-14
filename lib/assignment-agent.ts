@@ -1,9 +1,19 @@
+import { autoFixAPA7, buildCitationAudit, validateAPA7Format } from "@/lib/apa-validator";
+import { buildAssignmentHeader, buildDiscussionHeader } from "@/lib/header-builder";
+import { buildHumanizationReport, humanizeDraft } from "@/lib/humanizer";
+import {
+  buildPromptTemplateInput,
+  EMPTY_PROMPT_TEMPLATE,
+  parsePromptTemplate,
+} from "@/lib/prompt-template";
+import { enforceRubricInGeneration, parseRubric, rubricChecklistForUI } from "@/lib/rubric-enforcer";
 import {
   AssignmentOutputMode,
   AssignmentProfile,
   AssignmentRecord,
   AssignmentStatus,
   ComplianceReport,
+  ParsedPromptTemplate,
 } from "@/lib/types";
 
 type GenerationRequest = {
@@ -21,18 +31,8 @@ type WordCountRange = {
 
 const DEFAULT_STUDENT_CONTEXT = `Peter Christian Agbenyega is a UMGC graduate student in cloud computing, founder of Cloud Nexus Hub LLC, AWS certified, and working in real DevSecOps production environments with Terraform, EKS, ArgoCD, Trivy, Checkov, Gitleaks, SonarCloud, and OWASP ZAP.`;
 
-const GENERIC_PHRASES = [
-  "in today's rapidly evolving landscape",
-  "delve into",
-  "it is important to note",
-  "in conclusion",
-  "furthermore",
-  "moreover",
-  "leverages cutting-edge",
-  "robust solution",
-  "seamless integration",
-  "navigate the complexities of",
-];
+const DISCUSSION_ATTRIBUTION =
+  "AI attribution: I used AI assistance for brainstorming, source discovery, and structure checks while preparing this discussion post. The final analysis and wording reflect my own review of the course material.";
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
@@ -88,28 +88,34 @@ function titleFromPrompt(prompt: string) {
   return firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine;
 }
 
-function extractCourse(prompt: string) {
-  return prompt.match(/\b([A-Z]{3,4}\s?\d{3})\b/)?.[1] ?? "";
+function extractCourse(prompt: string, parsedTemplate: ParsedPromptTemplate) {
+  return parsedTemplate.course || (prompt.match(/\b([A-Z]{3,4}\s?\d{3})\b/)?.[1] ?? "");
 }
 
-function extractUnit(prompt: string) {
+function extractUnit(prompt: string, parsedTemplate: ParsedPromptTemplate) {
+  if (parsedTemplate.unit) {
+    return parsedTemplate.unit;
+  }
+
   const match = prompt.match(/\b(Unit|Week|Module)\s*([0-9]+)/i);
   return match ? `${match[1]} ${match[2]}` : "";
 }
 
-function extractType(prompt: string): AssignmentProfile["type"] {
-  if (/peer response|discussion/i.test(prompt)) return "discussion";
-  if (/quiz|multiple choice|true\/false/i.test(prompt)) return "quiz";
-  if (/lab|practical|screenshot/i.test(prompt)) return "lab";
-  if (/assignment|paper|essay|project/i.test(prompt)) return "assignment";
+function extractType(prompt: string, parsedTemplate: ParsedPromptTemplate): AssignmentProfile["type"] {
+  const source = `${parsedTemplate.type} ${prompt}`;
+  if (/peer response|discussion/i.test(source)) return "discussion";
+  if (/quiz|multiple choice|true\/false/i.test(source)) return "quiz";
+  if (/lab|practical|screenshot/i.test(source)) return "lab";
+  if (/assignment|paper|essay|project/i.test(source)) return "assignment";
   return "other";
 }
 
-function extractWordCounts(prompt: string) {
+function extractWordCounts(prompt: string, parsedTemplate: ParsedPromptTemplate) {
   const initialRange =
-    prompt.match(/(\d{2,4}\s*-\s*\d{2,4}\s*words?[^.\n]*initial post)/i)?.[1] ??
-    prompt.match(/initial post[^.\n]*(\d{2,4}\s*-\s*\d{2,4}\s*words?)/i)?.[1] ??
-    prompt.match(/(\d{2,4}\s*-\s*\d{2,4}\s*words?)/i)?.[1];
+    parsedTemplate.wordCount ||
+    (prompt.match(/(\d{2,4}\s*-\s*\d{2,4}\s*words?[^.\n]*initial post)/i)?.[1] ??
+      prompt.match(/initial post[^.\n]*(\d{2,4}\s*-\s*\d{2,4}\s*words?)/i)?.[1] ??
+      prompt.match(/(\d{2,4}\s*-\s*\d{2,4}\s*words?)/i)?.[1]);
 
   const peerRange =
     prompt.match(/(\d{2,4}\s*-\s*\d{2,4}\s*words?[^.\n]*peer)/i)?.[1] ??
@@ -121,19 +127,21 @@ function extractWordCounts(prompt: string) {
   };
 }
 
-function extractPeerRepliesRequired(prompt: string) {
-  const explicitMatch = prompt.match(/(\d+)\s+peer (?:responses|replies)/i);
+function extractPeerRepliesRequired(prompt: string, parsedTemplate: ParsedPromptTemplate) {
+  const source = `${parsedTemplate.specialRequirements}\n${prompt}`;
+  const explicitMatch = source.match(/(\d+)\s+peer (?:responses|replies)/i);
   if (explicitMatch) {
     return Number(explicitMatch[1]);
   }
 
-  return /peer (?:responses|replies)/i.test(prompt) ? 2 : 0;
+  return /peer (?:responses|replies)/i.test(source) ? 2 : 0;
 }
 
-function extractDueDates(prompt: string) {
+function extractDueDates(prompt: string, parsedTemplate: ParsedPromptTemplate) {
   const initialMatch =
-    prompt.match(/initial post:\s*([^|\n]+)/i)?.[1]?.trim() ??
-    prompt.match(/due(?: date)?:\s*([^|\n]+)/i)?.[1]?.trim();
+    parsedTemplate.due ||
+    (prompt.match(/initial post:\s*([^|\n]+)/i)?.[1]?.trim() ??
+      prompt.match(/due(?: date)?:\s*([^|\n]+)/i)?.[1]?.trim());
   const peerMatch = prompt.match(/peer (?:responses|replies):\s*([^|\n]+)/i)?.[1]?.trim();
 
   return {
@@ -159,16 +167,6 @@ function extractRequiredList(prompt: string, matcher: RegExp, fallbackPrefix: st
     }
   });
 
-  if (collected.size === 0) {
-    const partMatches = [...prompt.matchAll(/Part\s*\d+[:.)-]?\s*([^\n.]+)/gi)];
-    partMatches.forEach((match) => {
-      const value = match[1]?.trim();
-      if (value) {
-        collected.add(value.toLowerCase());
-      }
-    });
-  }
-
   if (collected.size === 0 && fallbackPrefix) {
     splitLines(prompt)
       .filter((line) => line.toLowerCase().includes(fallbackPrefix))
@@ -179,22 +177,12 @@ function extractRequiredList(prompt: string, matcher: RegExp, fallbackPrefix: st
 }
 
 function extractRubricCriteria(prompt: string, rubricText?: string) {
-  const source = `${prompt}\n${rubricText ?? ""}`;
-  const criteria = new Set<string>();
-  const rubricSectionMatches = [...source.matchAll(/([A-Za-z][A-Za-z /&-]{3,40})\s*:\s*\d+/g)];
+  const parsed = parseRubric(`${prompt}\n${rubricText ?? ""}`);
+  if (parsed.length > 0) {
+    return parsed.map((criterion) => criterion.label);
+  }
 
-  rubricSectionMatches.forEach((match) => {
-    const value = match[1]?.trim();
-    if (value && !/total/i.test(value)) {
-      criteria.add(value);
-    }
-  });
-
-  splitLines(source)
-    .filter((line) => /rubric|criteria|evaluation/i.test(line))
-    .forEach((line) => criteria.add(line));
-
-  return [...criteria];
+  return splitLines(`${prompt}\n${rubricText ?? ""}`).filter((line) => /rubric|criteria|evaluation/i.test(line));
 }
 
 function inferPracticalEvidence(prompt: string) {
@@ -207,48 +195,113 @@ function inferPracticalEvidence(prompt: string) {
   return practicalItems;
 }
 
-export function parseAssignmentPrompt(prompt: string, rubric = ""): AssignmentProfile {
-  const cleanPrompt = normalizeWhitespace(prompt);
-  const wordCounts = extractWordCounts(cleanPrompt);
-  const practicalEvidenceItems = inferPracticalEvidence(cleanPrompt);
+function collectPromptCoverageGaps(text: string, profile: AssignmentProfile) {
+  return profile.requiredSections.filter((section) => !text.toLowerCase().includes(section.toLowerCase().slice(0, 24)));
+}
+
+function hasRequiredHeader(draft: string, profile: AssignmentProfile) {
+  const firstSixLines = draft.split("\n").slice(0, 6).join("\n");
+  return /Peter Christian Agbenyega/i.test(firstSixLines) && new RegExp(profile.course || "Course", "i").test(firstSixLines);
+}
+
+function extractReferenceYears(draft: string) {
+  const referencesSection = draft.match(/\nreferences\s*\n([\s\S]+)$/i)?.[1] ?? "";
+  return [...referencesSection.matchAll(/\((19|20)\d{2}[a-z]?\)/g)].map((match) => Number(match[0].replace(/[()a-z]/gi, "")));
+}
+
+function buildSourceAudit(draft: string) {
+  const years = extractReferenceYears(draft);
+  const threshold = new Date().getFullYear() - 5;
+  const recentReferenceCount = years.filter((year) => year >= threshold).length;
+  const mostRecentYear = years.length > 0 ? Math.max(...years) : undefined;
+  const outdatedReferences = years.filter((year) => year < threshold).map(String);
 
   return {
-    course: extractCourse(cleanPrompt),
-    unit: extractUnit(cleanPrompt),
-    type: extractType(cleanPrompt),
-    title: titleFromPrompt(cleanPrompt),
+    currentYearThreshold: threshold,
+    recentReferenceCount,
+    mostRecentYear,
+    outdatedReferences,
+    pass: years.length === 0 || recentReferenceCount > 0,
+  };
+}
+
+function isToneNatural(draft: string, profile: AssignmentProfile) {
+  const banned = buildHumanizationReport(draft).replacedPhrases.length === 0;
+  if (profile.type === "discussion") {
+    return banned && /(I\b|my\b|in my work|I have seen|in practice)/i.test(draft);
+  }
+
+  return banned && !/tapestry|myriad|plethora|paramount importance/i.test(draft);
+}
+
+export function parseAssignmentPrompt(prompt: string, rubric = ""): AssignmentProfile {
+  const cleanPrompt = normalizeWhitespace(prompt);
+  const parsedTemplate = parsePromptTemplate(cleanPrompt);
+  const promptSource = buildPromptTemplateInput({
+    ...EMPTY_PROMPT_TEMPLATE,
+    ...parsedTemplate,
+  });
+  const source = `${promptSource}\n\n${cleanPrompt}`;
+  const wordCounts = extractWordCounts(source, parsedTemplate);
+  const practicalEvidenceItems = inferPracticalEvidence(source);
+
+  return {
+    course: extractCourse(source, parsedTemplate),
+    unit: extractUnit(source, parsedTemplate),
+    type: extractType(source, parsedTemplate),
+    title: parsedTemplate.type ? `${parsedTemplate.type}: ${parsedTemplate.unit || titleFromPrompt(source)}` : titleFromPrompt(source),
     prompt: cleanPrompt,
-    rubric: normalizeWhitespace(rubric),
+    rubric: normalizeWhitespace(rubric || parsedTemplate.rubric),
     initialPostWordCount: wordCounts.initialPostWordCount,
-    peerRepliesRequired: extractPeerRepliesRequired(cleanPrompt),
+    peerRepliesRequired: extractPeerRepliesRequired(source, parsedTemplate),
     peerReplyWordCount: wordCounts.peerReplyWordCount,
-    citationRequired: /citation|reference|source/i.test(cleanPrompt),
-    apaReferenceRequired: /apa/i.test(cleanPrompt),
-    ...extractDueDates(cleanPrompt),
-    requiredSections: extractRequiredList(cleanPrompt, /^(part|section)\s*\d+/i, ""),
+    citationRequired: /citation|reference|source/i.test(source),
+    apaReferenceRequired: /apa/i.test(source) || /reference/i.test(source),
+    ...extractDueDates(source, parsedTemplate),
+    requiredSections: extractRequiredList(
+      `${parsedTemplate.assignmentInstructions}\n${parsedTemplate.specialRequirements}\n${source}`,
+      /^(part|section)\s*\d+|explain|analyze|compare|discuss|evaluate|recommend|justify/i,
+      "",
+    ),
     requiredDeliverables: extractRequiredList(
-      cleanPrompt,
+      `${parsedTemplate.specialRequirements}\n${source}`,
       /deliverable|submit|include|attach|upload|required/i,
       "include",
     ),
-    rubricCriteria: extractRubricCriteria(cleanPrompt, rubric),
-    submissionFormat: /discussion/i.test(cleanPrompt)
+    rubricCriteria: extractRubricCriteria(source, rubric || parsedTemplate.rubric),
+    submissionFormat: /discussion/i.test(source)
       ? "discussion post"
-      : /quiz/i.test(cleanPrompt)
+      : /quiz/i.test(source)
         ? "quiz"
-        : /paper|essay|assignment|document/i.test(cleanPrompt)
+        : /paper|essay|assignment|document/i.test(source)
           ? "document"
           : undefined,
     practicalRequired: practicalEvidenceItems.length > 0,
     practicalEvidenceItems,
-    waitForPeerPosts: /wait for peer posts|after classmates post|once peers have posted/i.test(cleanPrompt),
-    screenshotsOrFilesRequired: /screenshot|upload|attach|file/i.test(cleanPrompt),
+    waitForPeerPosts: /wait for peer posts|after classmates post|once peers have posted/i.test(source),
+    screenshotsOrFilesRequired: /screenshot|upload|attach|file/i.test(source),
     sourceHints: [
-      /nist/i.test(cleanPrompt) ? "NIST publications" : "",
-      /aws/i.test(cleanPrompt) ? "AWS documentation" : "",
-      /apa/i.test(cleanPrompt) ? "APA 7 reference format" : "",
+      /nist/i.test(source) ? "NIST publications" : "",
+      /aws/i.test(source) ? "AWS documentation" : "",
+      /ieee|ffiec/i.test(source) ? "Official technical standards" : "",
+      /peer-reviewed|journal/i.test(source) ? "Peer-reviewed academic source" : "",
     ].filter(Boolean),
   };
+}
+
+export async function formatSubmissionDraft(profile: AssignmentProfile, draft: string) {
+  const header =
+    profile.type === "discussion"
+      ? buildDiscussionHeader(profile.course)
+      : buildAssignmentHeader(profile.course, profile.type);
+  const withApaFixes = autoFixAPA7(draft);
+  const { draft: humanizedDraft } = await humanizeDraft(withApaFixes);
+  const withAttribution =
+    profile.type === "discussion" && !humanizedDraft.includes("AI attribution:")
+      ? `${humanizedDraft}\n\n${DISCUSSION_ATTRIBUTION}`
+      : humanizedDraft;
+
+  return `${header}\n\n${withAttribution}`.trim();
 }
 
 export function buildGenerationPrompt({
@@ -257,6 +310,8 @@ export function buildGenerationPrompt({
   mode,
   studentContext,
 }: GenerationRequest) {
+  const rubric = parseRubric(profile.rubric);
+  const rubricLabels = rubric.length > 0 ? rubric.map((item) => item.label).join("; ") : profile.rubricCriteria.join("; ");
   const modeLine: Record<AssignmentOutputMode, string> = {
     initial_post: "Write a full discussion initial post that is ready to submit.",
     full_assignment: "Write the full assignment response that is ready to submit.",
@@ -264,7 +319,7 @@ export function buildGenerationPrompt({
     peer_reply: "Write one personalized peer reply only if a classmate post is provided in the prompt.",
     submission_comment: "Write a short professional submission comment only.",
     quiz_study_reasoning: "Explain the reasoning clearly for quiz study.",
-    rubric_cleanup: "Revise the draft so it covers the rubric more directly.",
+    rubric_cleanup: "Revise the draft so it directly satisfies every rubric criterion and exceeds-expectations indicator.",
     apa_reference_cleanup: "Revise the draft and fix citations plus APA references.",
     compliance_check_only: "Do not write a new answer.",
   };
@@ -272,6 +327,8 @@ export function buildGenerationPrompt({
   return `
 You are Prof. Scholar inside Cloud Nexus Scholar.
 ${studentContext ?? DEFAULT_STUDENT_CONTEXT}
+
+Target standard: EXCEEDS EXPECTATIONS across the full rubric.
 
 Assignment profile:
 - Course: ${profile.course || "Not stated"}
@@ -284,20 +341,19 @@ Assignment profile:
 - Peer reply word count: ${profile.peerReplyWordCount ?? "Not stated"}
 - Citation required: ${profile.citationRequired ? "Yes" : "No"}
 - APA required: ${profile.apaReferenceRequired ? "Yes" : "No"}
-- Practical required: ${profile.practicalRequired ? "Yes" : "No"}
 - Required sections: ${profile.requiredSections.join("; ") || "None stated"}
 - Required deliverables: ${profile.requiredDeliverables.join("; ") || "None stated"}
-- Rubric criteria: ${profile.rubricCriteria.join("; ") || "None stated"}
+- Rubric criteria: ${rubricLabels || "None stated"}
 
-Writing rules:
+Strict writing rules:
+- Cover every prompt section explicitly.
 - Match the stated word count.
-- Use plain, direct language.
-- Sound human, not polished corporate AI.
-- Use first person if the assignment is reflective or discussion-based.
-- Include Peter's real AWS and DevSecOps experience only where it fits naturally.
-- Do not invent personal stories, metrics, or sources.
-- Avoid these phrases: ${GENERIC_PHRASES.join("; ")}.
-- Keep the final answer clean and copy-ready with normal paragraphs.
+- Use APA 7 in-text citations and a references section when sources are required.
+- Use plain, direct language with a natural graduate-student tone.
+- Sound like Peter's real working voice, not polished corporate AI.
+- Use first person when the prompt is reflective or discussion-based.
+- Avoid invented facts, invented citations, and filler transitions.
+- Do not use generic AI phrasing.
 
 Task:
 ${modeLine[mode]}
@@ -338,23 +394,25 @@ export async function generateAcademicDraft(request: GenerationRequest) {
 }
 
 export function calculateReadinessScore(report: ComplianceReport) {
-  const weightedChecks = [
+  const checks = [
     report.wordCountPass,
-    report.citationPass,
-    report.apaReferencePass,
-    report.promptCoveragePass,
-    report.deliverablesPass,
-    report.genericWritingPass,
+    report.headerPass,
+    report.citationReferencePass,
+    report.apa7Pass,
+    report.sourceRecencyPass,
+    report.turnitinSafePass,
     report.peerReplyReadinessPass,
-    report.practicalEvidencePass,
-    report.rubricAlignment === "Strong",
+    report.tonePass,
+    report.humanizationPass,
+    report.promptCoveragePass,
+    report.rubricPass,
   ];
 
-  const passedChecks = weightedChecks.filter(Boolean).length;
-  const warningPenalty = Math.min(report.warnings.length * 4, 16);
-  const missingPenalty = Math.min(report.missingItems.length * 10, 40);
+  const passedChecks = checks.filter(Boolean).length;
+  const warningPenalty = Math.min(report.warnings.length * 3, 18);
+  const missingPenalty = Math.min(report.missingItems.length * 8, 48);
 
-  return Math.max(0, Math.min(100, Math.round((passedChecks / weightedChecks.length) * 100 - warningPenalty - missingPenalty)));
+  return Math.max(0, Math.min(100, Math.round((passedChecks / checks.length) * 100 - warningPenalty - missingPenalty)));
 }
 
 export function updateAssignmentStatus(record: AssignmentRecord, report?: ComplianceReport): AssignmentStatus {
@@ -368,10 +426,6 @@ export function updateAssignmentStatus(record: AssignmentRecord, report?: Compli
 
   if (dueDatePassed) {
     return "overdue";
-  }
-
-  if (record.practicalRequired && report && !report.practicalEvidencePass) {
-    return "practical_needed";
   }
 
   if (record.type === "quiz" && !record.finalDraft?.trim()) {
@@ -393,62 +447,31 @@ export function updateAssignmentStatus(record: AssignmentRecord, report?: Compli
   return "not_started";
 }
 
-function hasInTextCitation(text: string) {
-  return /\([A-Z][A-Za-z]+,\s*\d{4}[a-z]?(?:,\s*p{1,2}\.?\s*\d+)?\)/.test(text);
-}
-
-function hasApaReferencesSection(text: string) {
-  return /(^|\n)(references|reference)\s*\n/i.test(text);
-}
-
-function hasPersonalSpecificity(text: string) {
-  return /I\b|my\b|AWS|EKS|Terraform|ArgoCD|Trivy|Checkov|Gitleaks|SonarCloud|OWASP ZAP/i.test(text);
-}
-
-function getRubricAlignment(text: string, rubricCriteria: string[]) {
-  if (rubricCriteria.length === 0) {
-    return "Strong" as const;
-  }
-
-  const hits = rubricCriteria.filter((criterion) =>
-    text.toLowerCase().includes(criterion.toLowerCase().split(":")[0].trim()),
-  ).length;
-
-  if (hits >= Math.max(1, Math.ceil(rubricCriteria.length * 0.66))) return "Strong" as const;
-  if (hits >= Math.max(1, Math.ceil(rubricCriteria.length * 0.33))) return "Partial" as const;
-  return "Weak" as const;
-}
-
-function collectPromptCoverageGaps(text: string, profile: AssignmentProfile) {
-  return profile.requiredSections.filter((section) => !text.toLowerCase().includes(section.toLowerCase()));
-}
-
-function collectDeliverableGaps(text: string, profile: AssignmentProfile) {
-  return profile.requiredDeliverables.filter((item) => !text.toLowerCase().includes(item.toLowerCase().slice(0, 24)));
-}
-
 export function runComplianceCheck(profile: AssignmentProfile, draft: string): ComplianceReport {
   const trimmedDraft = draft.trim();
   const draftWordCount = countWords(trimmedDraft);
-  const relevantWordCount = parseWordCountRange(
-    profile.type === "discussion" ? profile.initialPostWordCount : profile.initialPostWordCount,
-  );
+  const relevantWordCount = parseWordCountRange(profile.initialPostWordCount);
   const wordCountPass =
     trimmedDraft.length > 0 &&
     (relevantWordCount.min === undefined || draftWordCount >= relevantWordCount.min) &&
     (relevantWordCount.max === undefined || draftWordCount <= relevantWordCount.max);
-  const citationPass = !profile.citationRequired || hasInTextCitation(trimmedDraft);
-  const apaReferencePass = !profile.apaReferenceRequired || hasApaReferencesSection(trimmedDraft);
+  const citationAudit = buildCitationAudit(trimmedDraft);
+  const apaValidation = validateAPA7Format(trimmedDraft);
+  const sourceAudit = buildSourceAudit(trimmedDraft);
+  const humanizationReport = buildHumanizationReport(trimmedDraft);
   const coverageGaps = collectPromptCoverageGaps(trimmedDraft, profile);
-  const deliverableGaps = collectDeliverableGaps(trimmedDraft, profile);
-  const rubricAlignment = getRubricAlignment(trimmedDraft, profile.rubricCriteria);
-  const genericPhraseHit = GENERIC_PHRASES.find((phrase) => trimmedDraft.toLowerCase().includes(phrase));
-  const genericWritingPass = !genericPhraseHit && hasPersonalSpecificity(trimmedDraft);
+  const rubricChecklist = rubricChecklistForUI(profile.rubric, trimmedDraft);
+  const rubricEnforcement = enforceRubricInGeneration(trimmedDraft, profile.rubric);
+  const headerPass = hasRequiredHeader(trimmedDraft, profile);
   const peerReplyReadinessPass =
     profile.peerRepliesRequired === 0 ||
-    !/peer reply|peer response/i.test(profile.prompt) ||
-    !profile.waitForPeerPosts;
-  const practicalEvidencePass = !profile.practicalRequired || profile.practicalEvidenceItems.length > 0;
+    !profile.waitForPeerPosts ||
+    !/peer reply|peer response/i.test(trimmedDraft);
+  const tonePass = isToneNatural(trimmedDraft, profile);
+  const turnitinSafePass = humanizationReport.aiScore < 20;
+  const humanizationPass =
+    humanizationReport.pass && humanizationReport.duplicateParagraphs.length === 0;
+  const sourceRecencyPass = !profile.citationRequired || sourceAudit.pass;
 
   const missingItems: string[] = [];
   const warnings: string[] = [];
@@ -456,61 +479,110 @@ export function runComplianceCheck(profile: AssignmentProfile, draft: string): C
   if (!wordCountPass) {
     missingItems.push(
       relevantWordCount.label === "No stated word count"
-        ? "Draft is missing or empty"
-        : `Word count is ${draftWordCount}, but requirement is ${relevantWordCount.label}`,
+        ? "Draft is missing or empty."
+        : `Word count is ${draftWordCount}, but requirement is ${relevantWordCount.label}.`,
     );
   }
 
-  if (!citationPass) missingItems.push("Required in-text citation is missing");
-  if (!apaReferencePass) missingItems.push("APA references section is missing");
-  if (coverageGaps.length > 0) missingItems.push(`Missing prompt sections: ${coverageGaps.join(", ")}`);
-  if (deliverableGaps.length > 0) missingItems.push(`Missing deliverables: ${deliverableGaps.join(", ")}`);
-  if (rubricAlignment === "Weak") missingItems.push("Rubric criteria are not covered strongly enough");
-  if (!peerReplyReadinessPass) missingItems.push("Peer posts are needed before writing personalized replies");
-  if (!practicalEvidencePass) missingItems.push("Practical evidence or screenshots are still required");
+  if (!headerPass) {
+    missingItems.push("Required academic header block is missing or incomplete.");
+  }
 
-  if (!genericWritingPass) {
-    warnings.push(
-      genericPhraseHit
-        ? `Generic AI-style phrase found: "${genericPhraseHit}"`
-        : "Writing needs more personal specificity or course-connected examples",
-    );
+  if (!citationAudit.pass) {
+    missingItems.push("Citations and references do not match cleanly.");
+  }
+
+  if (!apaValidation.pass) {
+    missingItems.push("APA 7 formatting issues still need correction.");
+  }
+
+  if (!sourceRecencyPass) {
+    missingItems.push(`Reference list needs at least one source published in ${sourceAudit.currentYearThreshold} or later.`);
+  }
+
+  if (!turnitinSafePass) {
+    missingItems.push(`Estimated AI score is ${humanizationReport.aiScore} and must be under 20.`);
+  }
+
+  if (!peerReplyReadinessPass) {
+    missingItems.push("Peer posts are still needed before a personalized reply can be finalized.");
+  }
+
+  if (!tonePass) {
+    missingItems.push("Draft tone does not yet read like a natural graduate-student submission.");
+  }
+
+  if (!humanizationPass) {
+    missingItems.push("Duplicate blocks or high-risk phrasing remain in the draft.");
+  }
+
+  if (coverageGaps.length > 0) {
+    missingItems.push(`Prompt sections still missing: ${coverageGaps.join(", ")}.`);
+  }
+
+  if (!rubricEnforcement.pass) {
+    missingItems.push("Not every rubric criterion is explicitly addressed at the exceeds-expectations level.");
+  }
+
+  if (citationAudit.orphanCitations.length > 0) {
+    warnings.push(`Orphan citations: ${citationAudit.orphanCitations.join("; ")}`);
+  }
+
+  if (citationAudit.orphanReferences.length > 0) {
+    warnings.push(`Uncited references: ${citationAudit.orphanReferences.join("; ")}`);
+  }
+
+  if (sourceAudit.outdatedReferences.length > 0) {
+    warnings.push(`Older references detected: ${sourceAudit.outdatedReferences.join(", ")}`);
   }
 
   if (profile.peerRepliesRequired > 0) {
-    warnings.push(`This assignment still needs ${profile.peerRepliesRequired} peer repl${profile.peerRepliesRequired === 1 ? "y" : "ies"} after the initial post.`);
+    warnings.push(`Peer response requirement tracked separately: ${profile.peerRepliesRequired} repl${profile.peerRepliesRequired === 1 ? "y" : "ies"} required.`);
   }
 
-  if (profile.practicalRequired) {
-    warnings.push(`Practical evidence expected: ${profile.practicalEvidenceItems.join(", ")}`);
-  }
+  humanizationReport.toneNotes.forEach((note) => warnings.push(note));
 
-  return {
+  const reportBase = {
     status: missingItems.length === 0 ? "Ready to submit" : "Needs revision",
     wordCount: draftWordCount,
     wordCountRequirement: relevantWordCount.label,
     wordCountPass,
-    citationPass,
-    apaReferencePass,
-    promptCoveragePass: coverageGaps.length === 0,
-    deliverablesPass: deliverableGaps.length === 0,
-    rubricAlignment,
-    genericWritingPass,
+    headerPass,
+    citationReferencePass: citationAudit.pass,
+    apa7Pass: apaValidation.pass,
+    sourceRecencyPass,
+    turnitinSafePass,
     peerReplyReadinessPass,
-    practicalEvidencePass,
+    tonePass,
+    humanizationPass,
+    promptCoveragePass: coverageGaps.length === 0,
+    rubricPass: rubricEnforcement.pass,
+    citationAudit,
+    apaValidation,
+    sourceAudit,
+    humanizationReport,
+    rubricChecklist,
     missingItems,
     warnings,
     nextAction:
       missingItems.length === 0
-        ? profile.peerRepliesRequired > 0
-          ? "Submit the initial discussion post, then wait for peer posts before writing replies"
-          : "Submit the assignment"
-        : missingItems[0] ?? "Revise the draft",
+        ? profile.type === "discussion" && profile.peerRepliesRequired > 0
+          ? "Initial post is ready. Track peer replies separately before closing the assignment."
+          : "Submit the assignment."
+        : missingItems[0] ?? "Revise the draft.",
+  } satisfies Omit<ComplianceReport, "readinessScore">;
+
+  return {
+    ...reportBase,
+    readinessScore: calculateReadinessScore({
+      ...reportBase,
+      readinessScore: 0,
+    }),
   };
 }
 
 export function generateSubmissionComment(record: AssignmentRecord) {
   const dueLabel = record.dueDate || "the listed deadline";
   const typeLabel = record.type.replace("_", " ");
-  return `Submitting my ${typeLabel} for ${record.course} ${record.unit ? `(${record.unit}) ` : ""}before ${dueLabel}. I reviewed the draft for assignment requirements, citations, and APA formatting before submission.`;
+  return `Submitting my ${typeLabel} for ${record.course} ${record.unit ? `(${record.unit}) ` : ""}before ${dueLabel}. I reviewed the header, rubric coverage, APA format, reference recency, and humanization checks before submission.`;
 }

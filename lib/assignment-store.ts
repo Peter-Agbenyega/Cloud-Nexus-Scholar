@@ -233,7 +233,7 @@ export function saveDraftAndCompliance(
     existing.profile ?? parseAssignmentPrompt(existing.prompt, existing.rubric);
   const report = runComplianceCheck(profile, draft);
   const status = forcedStatus ?? updateAssignmentStatus({ ...existing, finalDraft: draft, profile }, report);
-  const readinessScore = calculateReadinessScore(report);
+  const readinessScore = report.readinessScore ?? calculateReadinessScore(report);
 
   return patchAssignmentRecord(assignmentId, {
     finalDraft: draft,
