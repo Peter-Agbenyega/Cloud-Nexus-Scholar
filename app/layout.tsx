@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import "@/app/globals.css";
 import { AppShell } from "@/components/app-shell";
+import { FloatingHelp } from "@/components/floating-help";
 
 export const metadata: Metadata = {
   title: "Cloud Nexus Scholar",
@@ -18,6 +19,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AppShell>{children}</AppShell>
+        <FloatingHelp />
       </body>
     </html>
   );

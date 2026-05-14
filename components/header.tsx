@@ -31,6 +31,8 @@ export function Header() {
       ? "Academic roadmap"
       : activeRoot === "courses"
         ? "Course workspace"
+        : activeRoot === "workspace"
+          ? "Workspace"
         : activeRoot === "planner"
           ? "Planner"
           : activeRoot === "library"
@@ -47,6 +49,8 @@ export function Header() {
       ? "Mission control"
       : activeRoot === "courses"
           ? "UMGC course workspace"
+          : activeRoot === "workspace"
+            ? "Prof. Scholar workspace"
           : "Personal module";
 
   let contextLabel = `${pluralize(courses.length, "course")} across ${pluralize(programs.length, "program")}`;

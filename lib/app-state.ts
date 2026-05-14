@@ -22,7 +22,8 @@ export type LibraryEntryType =
   | "note"
   | "professor-session"
   | "quiz-review"
-  | "saved-draft";
+  | "saved-draft"
+  | "research";
 
 export type LibraryEntry = {
   id: string;

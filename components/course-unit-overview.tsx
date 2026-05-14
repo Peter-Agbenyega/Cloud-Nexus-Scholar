@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { GradeTracker } from "@/components/grade-tracker";
+import { SkillsPanel } from "@/components/skills-panel";
 import {
   GRADUATE_MIN_GRADE,
   getUnitPointsTotal,
@@ -276,6 +277,15 @@ export function CourseUnitOverview({ course }: CourseUnitOverviewProps) {
           <div className="h-px flex-1 bg-border/70" />
         </div>
         <GradeTracker courseCode={course.code} />
+      </section>
+
+      <section className="space-y-6">
+        <div className="flex items-center gap-4">
+          <div className="h-px flex-1 bg-border/70" />
+          <div className="text-xs uppercase tracking-[0.24em] text-accent">Skills Framework</div>
+          <div className="h-px flex-1 bg-border/70" />
+        </div>
+        <SkillsPanel courseCode={course.code} />
       </section>
     </div>
   );

@@ -1,13 +1,75 @@
-import { Program, UMGCCourse, CourseTopic, Concept } from "@/lib/types";
+import { Program, UMGCCourse, CourseTopic, Concept as BaseConcept } from "@/lib/types";
 
-function buildConcept(input: Omit<Concept, "relatedConcepts" | "crossCourseLinks"> & {
+/* ── Deep-concept types for course-material-derived knowledge ── */
+
+export type ConceptDepth = {
+  eli10: string;
+  intermediate: string;
+  advanced: string;
+};
+
+export type Concept = {
+  id: string;
+  title: string;
+  sourceType: "course-material-derived" | "placeholder";
+  depth: ConceptDepth;
+  whatIsIt: string;
+  whyItMatters: string;
+  howItWorks: string;
+  whereUsed: string;
+  whatCanGoWrong: string;
+  howSecured: string;
+  howUMGCTests: string;
+  diagramSpec: string;
+  relatedConcepts: string[];
+  crossCourseLinks: string[];
+};
+
+export type UnitTopic = {
+  id: string;
+  title: string;
+  slug: string;
+  sourceType: "course-material-derived" | "placeholder";
+  concepts: Concept[];
+};
+
+export type LearnerSuccessResource = {
+  title: string;
+  description: string;
+  actionUrl: string | null;
+};
+
+/* ── Helpers ── */
+
+function buildConcept(input: Omit<BaseConcept, "relatedConcepts" | "crossCourseLinks"> & {
   relatedConcepts?: string[];
-  crossCourseLinks?: Concept["crossCourseLinks"];
-}): Concept {
+  crossCourseLinks?: BaseConcept["crossCourseLinks"];
+}): BaseConcept {
   return {
     ...input,
     relatedConcepts: input.relatedConcepts ?? [],
     crossCourseLinks: input.crossCourseLinks ?? [],
+  };
+}
+
+function deepToBaseConcept(c: Concept): BaseConcept {
+  return {
+    id: c.id,
+    name: c.title,
+    explanations: c.depth,
+    whatIsIt: c.whatIsIt,
+    whyItMatters: c.whyItMatters,
+    howItWorks: c.howItWorks,
+    whereUsed: [c.whereUsed],
+    whatCanGoWrong: [c.whatCanGoWrong],
+    howSecured: [c.howSecured],
+    howUMGCTests: [c.howUMGCTests],
+    diagramSpec: c.diagramSpec,
+    relatedConcepts: c.relatedConcepts,
+    crossCourseLinks: c.crossCourseLinks.map((link) => {
+      const match = link.match(/^(CLCS|CTCH)\s+\d+/);
+      return { courseCode: match?.[0] ?? "", rationale: link };
+    }),
   };
 }
 
@@ -38,6 +100,540 @@ function buildCourse(input: Omit<UMGCCourse, "sourceType"> & {
   };
 }
 
+/* ── CLCS 605 Deep Topics (course-material-derived) ── */
+
+export const clcs605LearningGoals: string[] = [
+  "Analyze organizational infrastructure needs and align with appropriate cloud computing strategies",
+  "Evaluate IaaS, PaaS, SaaS service models and public, private, hybrid deployment configurations",
+  "Assess cloud security risks and employ IAM, data protection, and network security controls",
+  "Plan scalable and cost-optimized cloud infrastructure using architecture principles and serverless patterns",
+  "Explain cloud development, deployment, integration, migration, and post-deployment operations",
+  "Explain cloud automation, orchestration, monitoring, backup, and disaster recovery solutions",
+];
+
+export const clcs605LearnerSuccessResources: LearnerSuccessResource[] = [
+  {
+    title: "Using Brightspace Pulse",
+    description:
+      "Download the Brightspace Pulse mobile app to track deadlines, get grade notifications, and read announcements. Use desktop for submitting assignments and taking quizzes.",
+    actionUrl: null,
+  },
+  {
+    title: "Checking Rubrics and Feedback",
+    description:
+      "After each graded item go to Grades, click the assignment, and find View Graded Rubric. Read every criterion before you start writing so you know exactly what Exceeds Expectations looks like.",
+    actionUrl: null,
+  },
+  {
+    title: "Respectful Online Communication",
+    description:
+      "All posts must be professional. Cite sources. Do not share personal information about peers. Re-read before posting. Your digital communication is part of your professional reputation.",
+    actionUrl: null,
+  },
+  {
+    title: "Citation and Academic Integrity",
+    description:
+      "Every factual claim needs an APA citation. Turnitin runs automatically on all submissions. Use Turnitin Draft Coach in Microsoft Word before submitting to check similarity. Drafts checked there are not stored in Turnitin’s database.",
+    actionUrl: null,
+  },
+  {
+    title: "AI Use Honesty",
+    description:
+      "UMGC permits AI for brainstorming, background research, and concept clarification. Any AI-generated content submitted must be cited. Add a statement at the end of your assignment explaining how you used AI. When unsure ask your professor first.",
+    actionUrl: null,
+  },
+];
+
+export const clcs605DeepTopics: UnitTopic[] = [
+  /* ── Unit 1: Fundamentals of Cloud Computing ── */
+  {
+    id: "unit-1",
+    title: "Fundamentals of Cloud Computing",
+    slug: "fundamentals-of-cloud-computing",
+    sourceType: "course-material-derived",
+    concepts: [
+      {
+        id: "nist-cloud-definition",
+        title: "NIST Definition and Essential Characteristics",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "Cloud computing is like renting a supercomputer instead of buying one. You only pay for what you use, you can get more power instantly, and you can reach it from anywhere.",
+          intermediate:
+            "NIST defines cloud computing as on-demand network access to shared configurable computing resources that can be rapidly provisioned with minimal management effort. The five essential characteristics are on-demand self-service, broad network access, resource pooling, rapid elasticity, and measured service.",
+          advanced:
+            "The NIST SP 800-145 definition establishes cloud computing as a model rather than a technology, with essential characteristics that distinguish it from traditional hosting. On-demand self-service eliminates provisioning workflows. Broad network access enables platform-agnostic consumption. Resource pooling uses multi-tenancy with location independence. Rapid elasticity enables horizontal scaling that appears infinite to the consumer. Measured service creates pay-per-use economics through metered resource consumption.",
+        },
+        whatIsIt:
+          "The authoritative NIST definition of cloud computing and its five essential characteristics that distinguish cloud from traditional IT infrastructure.",
+        whyItMatters:
+          "Every cloud architecture decision traces back to these five characteristics. Understanding them lets you evaluate whether a proposed solution is truly cloud-native or just hosted infrastructure.",
+        howItWorks:
+          "A cloud provider builds massive shared infrastructure. Virtualization abstracts physical hardware. Automation handles provisioning. Metering tracks consumption. The consumer interacts through APIs and self-service portals without touching physical hardware.",
+        whereUsed:
+          "Used in every CLCS 605 discussion post, assignment, and quiz as the foundational framework for evaluating cloud solutions.",
+        whatCanGoWrong:
+          "Misclassifying hosted infrastructure as cloud. Assuming on-premises virtualization is cloud. Conflating cloud with outsourcing.",
+        howSecured:
+          "The NIST model itself addresses security through the shared responsibility model — provider secures infrastructure, consumer secures data and access.",
+        howUMGCTests:
+          "Unit 1 Discussion asks you to analyze how the five essential characteristics interact to enable organizational transformation. Unit 1 Quiz tests scenario-based application of service and deployment models.",
+        diagramSpec:
+          "Five concentric circles: center = measured service, then rapid elasticity, resource pooling, broad network access, outer = on-demand self-service. Each layer enables the next.",
+        relatedConcepts: ["cloud-service-models", "cloud-deployment-models", "virtualization"],
+        crossCourseLinks: ["CLCS 615 Unit 1: same NIST framework applied to service selection decisions"],
+      },
+      {
+        id: "cloud-service-models",
+        title: "Cloud Service Models",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "IaaS gives you the building blocks like walls and floors. PaaS gives you a furnished room. SaaS gives you a hotel room — everything is ready, you just move in.",
+          intermediate:
+            "IaaS provides virtualized compute, storage, and networking — you manage OS upward. PaaS adds runtime, middleware, and development tools — you manage application and data. SaaS delivers the full application — you manage only your configuration and data.",
+          advanced:
+            "The service model determines the shared responsibility boundary. In IaaS the consumer controls everything above the hypervisor, creating maximum flexibility and maximum responsibility — relevant to Peter’s EC2 and EKS work. PaaS abstracts infrastructure management enabling faster deployment cycles at the cost of runtime control. SaaS shifts nearly all security and operational responsibility to the provider. The boundary implications are critical for IAM design, compliance scope, and incident response planning.",
+        },
+        whatIsIt:
+          "The three primary cloud service models — IaaS, PaaS, SaaS — defining the division of management responsibility between provider and consumer.",
+        whyItMatters:
+          "Service model selection determines your security responsibilities, operational overhead, and architectural flexibility. Wrong model selection creates security gaps and cost overruns.",
+        howItWorks:
+          "Each layer builds on the previous. IaaS virtualizes hardware. PaaS adds managed runtime on top of IaaS. SaaS adds application logic on top of PaaS. Each additional layer the provider manages reduces consumer control and operational burden.",
+        whereUsed:
+          "AWS EC2 is IaaS. AWS Elastic Beanstalk is PaaS. AWS Managed Services and SaaS products like Salesforce. Peter’s EKS clusters run on IaaS with container orchestration as a PaaS-like abstraction.",
+        whatCanGoWrong:
+          "Assuming SaaS providers handle all security. Not understanding where your responsibility starts in IaaS. Choosing PaaS when you need low-level OS access.",
+        howSecured:
+          "IaaS: you own network controls, OS hardening, and IAM. PaaS: provider handles OS, you handle app security and data. SaaS: provider handles almost everything, you handle access management and data governance.",
+        howUMGCTests:
+          "CLCS 615 Unit 1 Assignment directly tests your ability to evaluate IaaS, PaaS, SaaS from a cybersecurity perspective. CLCS 605 quizzes include scenario-based service model selection questions.",
+        diagramSpec:
+          "Vertical stack diagram. Bottom: Physical Hardware. Layer 2: Virtualization. Layer 3: IaaS boundary. Layer 4: Runtime/Middleware. Layer 5: PaaS boundary. Layer 6: Application. Layer 7: SaaS boundary. Provider manages below each boundary, consumer manages above.",
+        relatedConcepts: ["nist-cloud-definition", "cloud-deployment-models", "shared-responsibility-model"],
+        crossCourseLinks: [
+          "CLCS 615 Unit 1 Assignment: evaluate service models from cybersecurity perspective",
+          "CLCS 625: security implications of each service model",
+        ],
+      },
+      {
+        id: "cloud-deployment-models",
+        title: "Cloud Deployment Models",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "Public cloud is like renting a desk in a co-working space. Private cloud is like having your own private office. Hybrid is having both and moving between them. Multi-cloud is renting desks in different buildings.",
+          intermediate:
+            "Public cloud is multi-tenant infrastructure owned by a provider — AWS, Azure, GCP. Private cloud is single-tenant infrastructure controlled by one organization. Hybrid connects public and private with orchestration. Community cloud is shared among organizations with common requirements. Multi-cloud uses multiple providers to avoid vendor lock-in.",
+          advanced:
+            "Deployment model selection is fundamentally a governance and risk decision. Public cloud maximizes elasticity and minimizes capital expenditure but creates data residency and compliance considerations. Private cloud meets strict regulatory requirements at the cost of elasticity. Hybrid enables workload portability and data sovereignty for regulated data while leveraging public cloud elasticity for non-sensitive workloads — the dominant enterprise pattern. Multi-cloud reduces vendor dependency and enables best-of-breed service selection at the cost of operational complexity.",
+        },
+        whatIsIt:
+          "The four cloud deployment models defining infrastructure ownership, tenancy, and access control.",
+        whyItMatters:
+          "Deployment model determines where data physically resides, who has access to infrastructure, and what compliance frameworks apply.",
+        howItWorks:
+          "Public: provider owns and operates shared infrastructure accessed over internet. Private: organization owns or leases dedicated infrastructure. Hybrid: orchestration layer connects public and private enabling workload portability. Multi-cloud: management plane spans multiple providers.",
+        whereUsed:
+          "Most enterprises use hybrid or multi-cloud. Peter’s production work likely uses public cloud with private network controls. Healthcare and government typically require private or community cloud for regulated data.",
+        whatCanGoWrong:
+          "Assuming public cloud is always less secure. Not planning data residency in hybrid. Multi-cloud creating unmanaged shadow IT. Hybrid integration failures exposing private data.",
+        howSecured:
+          "Public: provider physical security plus consumer logical security. Private: full stack consumer responsibility. Hybrid: security controls must span both environments consistently. Multi-cloud: unified identity and access management across providers.",
+        howUMGCTests:
+          "CLCS 615 Unit 3 Assignment: design cloud strategy for regulated healthcare organization — requires deployment model justification with governance reasoning.",
+        diagramSpec:
+          "Four quadrants: top-left Public (AWS/Azure/GCP logos, multi-tenant), top-right Private (single org, dedicated), bottom-left Hybrid (arrow connecting public and private), bottom-right Multi-cloud (multiple provider logos connected).",
+        relatedConcepts: ["cloud-service-models", "nist-cloud-definition", "cloud-governance"],
+        crossCourseLinks: [
+          "CLCS 615 Unit 3: governance-focused cloud strategy",
+          "CLCS 625: compliance implications of each deployment model",
+        ],
+      },
+      {
+        id: "virtualization",
+        title: "Virtualization",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "Virtualization is like having one powerful computer pretend to be ten separate computers at the same time. Each person thinks they have their own computer but they are all sharing the same machine.",
+          intermediate:
+            "Virtualization creates an abstraction layer between applications and physical hardware using a hypervisor. Type 1 hypervisors run directly on hardware. Type 2 run on an OS. Virtual machines share physical resources while maintaining isolation. Containerization extends this by sharing the OS kernel.",
+          advanced:
+            "IBM introduced virtual machines in 1967 with CP-67. Modern cloud platforms use Type 1 hypervisors for VM isolation and container runtimes for lightweight application packaging. The key architectural insight is that virtualization enables resource pooling — one of NIST’s essential characteristics. Containerization via Docker packages applications with dependencies ensuring environmental consistency. Kubernetes orchestrates containers at scale — directly relevant to Peter’s EKS production work. The transition from VMs to containers to serverless represents progressive abstraction of infrastructure management.",
+        },
+        whatIsIt:
+          "The technology that abstracts physical hardware into virtual resources, enabling the resource pooling and elasticity that makes cloud computing possible.",
+        whyItMatters:
+          "Without virtualization there is no cloud computing. Every AWS EC2 instance, every Docker container, every EKS node traces back to virtualization as the foundational technology.",
+        howItWorks:
+          "Hypervisor sits between physical hardware and virtual machines. It allocates CPU, memory, storage, and network as virtual resources. Each VM has its own OS. Containers share the host OS kernel through namespaces and cgroups, making them lighter than VMs.",
+        whereUsed:
+          "AWS EC2 uses Nitro hypervisor. Docker containers use Linux namespaces. Peter’s EKS clusters run containerized workloads on EC2 instances — stacked virtualization.",
+        whatCanGoWrong:
+          "VM sprawl — unmanaged proliferation of virtual machines consuming resources. Container escape vulnerabilities. Hypervisor attacks. Noisy neighbor problems in shared infrastructure.",
+        howSecured:
+          "Hypervisor isolation between VMs. Container security using Trivy for image scanning — Peter uses this daily. Network policies in Kubernetes for pod isolation. Gitleaks for secret scanning in container images.",
+        howUMGCTests:
+          "CLCS 605 Unit 1 learning resources include IEEE paper on cloud computing history and virtualization. Quiz questions test understanding of how virtualization enables cloud characteristics.",
+        diagramSpec:
+          "Vertical stack: Physical Server at bottom, Hypervisor layer, then multiple VM boxes side by side each containing OS and App. Separate column shows Container Host with shared OS kernel and multiple lightweight container boxes.",
+        relatedConcepts: ["nist-cloud-definition", "cloud-service-models", "containerization"],
+        crossCourseLinks: [
+          "CLCS 635: container orchestration and DevOps",
+          "CTCH 605: VM and container security",
+        ],
+      },
+    ],
+  },
+
+  /* ── Unit 2: Cloud Security and Compliance ── */
+  {
+    id: "unit-2",
+    title: "Cloud Security and Compliance",
+    slug: "cloud-security-and-compliance",
+    sourceType: "course-material-derived",
+    concepts: [
+      {
+        id: "iam-and-access-control",
+        title: "Identity and Access Management",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "IAM is like the security guard and keycard system for cloud resources. It controls who can get in, what rooms they can enter, and what they can do inside each room.",
+          intermediate:
+            "IAM defines authentication (who are you) and authorization (what can you do). Cloud IAM uses policies attached to identities — users, groups, roles, and service accounts. Least privilege is the core principle: grant only the minimum permissions needed. AWS IAM uses policies in JSON format. Azure uses RBAC. Google Cloud uses IAM with predefined and custom roles.",
+          advanced:
+            "IAM is the primary attack surface in cloud environments. Misconfigured IAM is the leading cause of cloud breaches. The shared responsibility model places IAM entirely in the consumer’s responsibility across all service models. Key concepts: identity federation using SAML or OIDC for SSO, cross-account role assumption in AWS, service account security, permission boundaries, attribute-based access control (ABAC) vs role-based access control (RBAC). Peter’s daily work with ArgoCD requires service account IAM design. Checkov scans IaC for IAM misconfigurations. The Unit 2 assignment directly tests IAM design in a business scenario.",
+        },
+        whatIsIt:
+          "The framework of policies, roles, and controls that govern who can access cloud resources and what actions they can perform.",
+        whyItMatters:
+          "IAM misconfiguration is the number one cause of cloud data breaches. Proper IAM design is the foundation of every security control in cloud environments.",
+        howItWorks:
+          "Every API call to a cloud provider is authenticated and authorized. The caller presents credentials — access key, OAuth token, or instance role. The provider evaluates attached policies against the requested action and resource. Allow or deny decision is made. In AWS this flows through IAM policy evaluation logic: explicit deny wins, then explicit allow, then implicit deny.",
+        whereUsed:
+          "AWS IAM for all AWS service access. Azure RBAC for Azure resources. Kubernetes RBAC for pod and namespace access — Peter’s EKS clusters use both AWS IAM and Kubernetes RBAC simultaneously. ArgoCD uses service accounts with scoped Kubernetes RBAC.",
+        whatCanGoWrong:
+          "Overprivileged roles — giving AdministratorAccess instead of scoped permissions. Hardcoded credentials in code — Gitleaks catches this. Unused access keys never rotated. Public S3 buckets from misconfigured bucket policies. Cross-account role trust policy errors.",
+        howSecured:
+          "Least privilege by default. MFA on all human identities. No long-term access keys for applications — use IAM roles. Regular access reviews. Checkov scans Terraform for IAM misconfigurations before deployment. CloudTrail logs all IAM API calls.",
+        howUMGCTests:
+          "CLCS 605 Unit 2 Assignment: Cloud IAM and Data Security Design — implement IAM controls for a business scenario using a provided template. This is a hands-on design assignment worth 100 points.",
+        diagramSpec:
+          "Central resource box. Arrows from: User with MFA badge, Service Account with role badge, External System with federation badge. Each arrow passes through an IAM Policy evaluation box showing Allow or Deny. CloudTrail logging box captures all.",
+        relatedConcepts: ["cloud-security-compliance", "zero-trust-architecture", "shared-responsibility-model"],
+        crossCourseLinks: [
+          "CLCS 615 Unit 4: security architecture including IAM design",
+          "CLCS 625: advanced IAM security",
+          "CTCH courses: identity-centric security",
+        ],
+      },
+      {
+        id: "cloud-data-security",
+        title: "Cloud Data Security",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "Cloud data security is like putting your documents in a locked safe, making copies in different locations, and keeping a record of everyone who opened the safe.",
+          intermediate:
+            "Cloud data security covers encryption at rest and in transit, data classification, access controls, and compliance requirements. Encryption at rest uses AES-256 in most cloud providers. Encryption in transit uses TLS 1.2 or 1.3. Data loss prevention policies scan for sensitive data patterns. Backup and versioning protect against ransomware and accidental deletion.",
+          advanced:
+            "Data security in cloud requires understanding the encryption key management hierarchy. AWS KMS manages customer master keys with automated rotation. Client-side encryption keeps keys entirely in consumer control. Data residency requirements in regulated industries constrain deployment model choices. GDPR, HIPAA, and SOC2 compliance frameworks impose specific encryption, access logging, and retention requirements. Tokenization and data masking protect sensitive fields in non-production environments. Peter’s SCS-C02 certification covers AWS data protection services in depth.",
+        },
+        whatIsIt:
+          "The controls, encryption, and policies that protect data stored in and transmitted through cloud environments.",
+        whyItMatters:
+          "Data is the primary target of cloud attacks. Encryption, access controls, and monitoring are the three pillars of preventing, detecting, and responding to data breaches.",
+        howItWorks:
+          "Data is classified by sensitivity. Encryption keys are managed through KMS. Access policies restrict who can read or write data. Audit logs capture all data access events. DLP tools scan for sensitive data leaving controlled environments.",
+        whereUsed:
+          "S3 server-side encryption. RDS encryption at rest. TLS for all API communications. AWS Macie for sensitive data discovery. SonarCloud in Peter’s pipeline scans for secrets in code — related to preventing data exposure through code.",
+        whatCanGoWrong:
+          "Unencrypted S3 buckets. Weak or default encryption keys. Missing TLS on internal APIs. Overly broad data access policies. No data classification leading to sensitive data in dev environments.",
+        howSecured:
+          "Enforce encryption by default through AWS Config rules. Use KMS with automatic key rotation. Implement S3 bucket policies blocking public access. Enable CloudTrail and S3 access logging. Use AWS Macie for PII discovery.",
+        howUMGCTests:
+          "CLCS 605 Unit 2 Assignment combines IAM and data security design. CLCS 615 Unit 2 Assignment evaluates SLAs for business-critical applications including data protection commitments.",
+        diagramSpec:
+          "Data flow diagram: Data created → Classification tag applied → Encryption at rest (KMS key) → Stored in S3/RDS → Access request → IAM policy check → Audit log entry → Data transmitted with TLS → Destination.",
+        relatedConcepts: ["iam-and-access-control", "cloud-compliance", "encryption-key-management"],
+        crossCourseLinks: [
+          "CLCS 625: advanced data security",
+          "CTCH 615: network-level data protection",
+        ],
+      },
+    ],
+  },
+
+  /* ── Unit 3: Cloud Strategy and Security Implementation ── */
+  {
+    id: "unit-3",
+    title: "Cloud Strategy and Security Implementation",
+    slug: "cloud-strategy-and-security-implementation",
+    sourceType: "course-material-derived",
+    concepts: [
+      {
+        id: "cloud-security-strategy",
+        title: "Cloud Security Strategy",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "A cloud security strategy is like a plan for keeping your house safe. You decide where to put locks, cameras, and alarms before you move in — not after something goes wrong.",
+          intermediate:
+            "Cloud security strategy defines the security principles, frameworks, and controls before cloud deployment. It includes choosing compliance frameworks like NIST CSF or ISO 27001, defining the shared responsibility model boundaries, establishing security baselines, and planning incident response.",
+          advanced:
+            "Effective cloud security strategy follows a defense-in-depth model. The strategy must address identity, network, data, application, and infrastructure layers simultaneously. Zero trust architecture assumes no implicit trust even inside the network perimeter. The strategy must align with business objectives — security controls that block productivity create shadow IT that increases risk. Peter’s DevSecOps background means he already implements shift-left security — integrating Trivy, Checkov, and OWASP ZAP in CI/CD pipelines before deployment. This is the practical implementation of a security strategy.",
+        },
+        whatIsIt:
+          "A comprehensive plan defining security principles, controls, frameworks, and responsibilities for cloud environments before and during deployment.",
+        whyItMatters:
+          "Organizations that deploy cloud without a security strategy consistently experience breaches from misconfiguration, not sophisticated attacks. Strategy prevents the most common and costly failures.",
+        howItWorks:
+          "Define security requirements from business and compliance needs. Map to a framework like NIST CSF or CIS Benchmarks. Establish baseline controls for each cloud service. Automate compliance checking with tools like Checkov for IaC. Implement continuous monitoring with CloudWatch and Security Hub. Define incident response procedures.",
+        whereUsed:
+          "Every enterprise cloud deployment. Peter’s DevSecOps pipeline implements automated security strategy — Trivy scans images, Checkov scans IaC, OWASP ZAP tests running applications.",
+        whatCanGoWrong:
+          "Security as an afterthought added post-deployment. Compliance checkbox mentality without actual risk reduction. Security controls not aligned with developer workflows creating bypass behavior.",
+        howSecured:
+          "Shift-left security integration. Automated policy enforcement through IaC scanning. Continuous compliance monitoring. Regular security assessments and penetration testing.",
+        howUMGCTests:
+          "CLCS 605 Unit 3 Quiz: Comprehensive Cloud Knowledge Assessment. CLCS 615 Unit 3 Assignment: design governance-focused cloud strategy for a regulated healthcare organization.",
+        diagramSpec:
+          "Security layers diagram: outer ring = Governance and Compliance, next = Network Security, next = Identity and Access, next = Data Protection, center = Application Security. All layers connected to central Monitoring and Response hub.",
+        relatedConcepts: ["iam-and-access-control", "cloud-data-security", "zero-trust-architecture"],
+        crossCourseLinks: [
+          "CLCS 615 Unit 3: comprehensive cloud strategy development",
+          "CLCS 625: full security architecture course",
+        ],
+      },
+    ],
+  },
+
+  /* ── Unit 4: Cloud Architecture and Design ── */
+  {
+    id: "unit-4",
+    title: "Cloud Architecture and Design",
+    slug: "cloud-architecture-and-design",
+    sourceType: "course-material-derived",
+    concepts: [
+      {
+        id: "cloud-architecture-principles",
+        title: "Cloud Architecture Principles",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "Cloud architecture principles are the rules architects follow to build systems that stay up, can grow, and do not cost more than necessary. Like building rules for a skyscraper — safety, flexibility, and efficiency.",
+          intermediate:
+            "Cloud architecture principles include high availability through redundancy, fault tolerance through graceful degradation, scalability through horizontal scaling, cost optimization through right-sizing and reserved capacity, and security through defense in depth. AWS Well-Architected Framework organizes these into five pillars: operational excellence, security, reliability, performance efficiency, and cost optimization.",
+          advanced:
+            "Architecture principles must be expressed as constraints that guide design decisions. High availability requires understanding of failure domains — availability zones and regions. Fault tolerance requires circuit breakers, bulkheads, and retry logic with exponential backoff. Scalability in cloud-native systems uses horizontal scaling with stateless services and externalized state in managed databases or caches. Cost optimization at architecture level means choosing the right service type — reserved instances for steady-state workloads, spot for fault-tolerant batch, serverless for variable workloads. The Unit 4 assignment directly tests cost optimization planning.",
+        },
+        whatIsIt:
+          "The foundational design principles that guide cloud architecture decisions to achieve reliability, security, performance, and cost efficiency.",
+        whyItMatters:
+          "Architecture decisions made early are expensive to reverse. Applying the right principles from the start prevents costly redesigns and outages.",
+        howItWorks:
+          "Each principle translates to specific architectural patterns. High availability means deploying across multiple availability zones. Fault tolerance means implementing retry logic and circuit breakers. Cost optimization means matching instance types to workload patterns and using auto-scaling.",
+        whereUsed:
+          "Every production cloud deployment. Peter’s EKS clusters implement high availability through multi-AZ node groups. ArgoCD implements GitOps for operational excellence.",
+        whatCanGoWrong:
+          "Single points of failure from single-AZ deployments. Cost overruns from over-provisioned instances never right-sized. Performance bottlenecks from stateful services that cannot scale horizontally.",
+        howSecured:
+          "Architecture-level security includes network segmentation through VPCs and security groups, encryption by default, IAM least privilege, and infrastructure as code for repeatable secure deployments.",
+        howUMGCTests:
+          "CLCS 605 Unit 4 Assignment: Cloud Cost Optimization Plan — directly tests ability to analyze resource utilization and recommend optimization strategies. Worth 125 points.",
+        diagramSpec:
+          "Multi-AZ architecture diagram: Region box containing two AZ boxes. Each AZ has web tier, app tier, database tier. Load balancer spans AZs. Auto-scaling groups in app tier. RDS Multi-AZ for database. Cost tags on each resource layer.",
+        relatedConcepts: ["cloud-security-strategy", "serverless-architecture", "cost-optimization"],
+        crossCourseLinks: [
+          "CLCS 615 Unit 4: cloud architecture and design principles",
+          "CLCS 635: DevOps and architecture automation",
+        ],
+      },
+    ],
+  },
+
+  /* ── Unit 5: Cloud Design and Implementation Strategies ── */
+  {
+    id: "unit-5",
+    title: "Cloud Design and Implementation Strategies",
+    slug: "cloud-design-and-implementation-strategies",
+    sourceType: "course-material-derived",
+    concepts: [
+      {
+        id: "cloud-migration-strategies",
+        title: "Cloud Migration Strategies",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "Cloud migration is like moving house. You can move everything at once, move room by room, rebuild everything from scratch in the new place, or just rent furniture at the new place instead of bringing your old stuff.",
+          intermediate:
+            "The 6 Rs of cloud migration: Rehost (lift and shift), Replatform (lift and reshape), Repurchase (drop and shop to SaaS), Refactor or Re-architect (redesign for cloud-native), Retire (decommission unused applications), Retain (keep on-premises). Each strategy trades migration speed against cloud optimization.",
+          advanced:
+            "Migration strategy selection requires total cost of ownership analysis across time horizons. Rehost delivers fastest migration but leaves cloud economics unrealized — workloads run in cloud but behave like on-premises. Refactoring unlocks cloud-native patterns — auto-scaling, managed services, serverless — but requires development investment. The Wave approach migrates workloads in prioritized batches based on complexity and business value. Peter’s background in containerization positions him to lead replatforming efforts — taking existing applications and containerizing them for EKS without full refactoring.",
+        },
+        whatIsIt:
+          "The strategic frameworks and tactical approaches for moving applications and data from on-premises or legacy environments to cloud infrastructure.",
+        whyItMatters:
+          "Migration strategy determines the balance between speed to cloud and realization of cloud economic and operational benefits.",
+        howItWorks:
+          "Assess current application portfolio. Classify each application using the 6 Rs. Prioritize migration waves by business value and technical complexity. Execute migrations. Validate performance and cost post-migration. Optimize continuously.",
+        whereUsed:
+          "Enterprise cloud adoption programs. AWS Migration Hub tracks migration progress. AWS Application Migration Service automates lift and shift. Peter’s containerization skills are directly applicable to replatforming migrations.",
+        whatCanGoWrong:
+          "Lift and shift without optimization leading to higher cloud costs than on-premises. Underestimating application interdependencies. Missing data migration complexity. Inadequate testing before cutover.",
+        howSecured:
+          "Maintain security controls during migration. Use encrypted transfer. Validate IAM policies before cutover. Run parallel environments during transition. Use Checkov to scan migrated IaC configurations.",
+        howUMGCTests:
+          "CLCS 605 Unit 5 Assignment: Comprehensive Cloud Solution Design Project — create a cloud deployment plan for a small business application. Worth 150 points — the highest weighted assignment.",
+        diagramSpec:
+          "Migration wave diagram: horizontal timeline with Wave 1 (simple stateless apps, rehost), Wave 2 (stateful apps, replatform), Wave 3 (complex legacy, refactor or retire). Each wave shows assessment, migrate, validate, optimize phases.",
+        relatedConcepts: ["cloud-architecture-principles", "cloud-deployment-models", "cost-optimization"],
+        crossCourseLinks: [
+          "CLCS 635: DevOps practices for migration automation",
+          "CLCS 645: advanced cloud topics including migration patterns",
+        ],
+      },
+    ],
+  },
+
+  /* ── Unit 6: Cloud Development and Deployment ── */
+  {
+    id: "unit-6",
+    title: "Cloud Development and Deployment",
+    slug: "cloud-development-and-deployment",
+    sourceType: "course-material-derived",
+    concepts: [
+      {
+        id: "cicd-pipelines-cloud",
+        title: "CI/CD Pipelines in Cloud",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "A CI/CD pipeline is like a robot assembly line for software. Every time a developer writes new code, the robot automatically checks it, tests it, and if everything passes, puts it live without any human having to do each step manually.",
+          intermediate:
+            "Continuous Integration automatically builds and tests code on every commit. Continuous Delivery ensures code is always in a deployable state. Continuous Deployment automatically deploys to production after tests pass. Cloud-native CI/CD uses managed services — AWS CodePipeline, GitHub Actions, GitLab CI — integrated with cloud deployment targets.",
+          advanced:
+            "Peter already operates production CI/CD pipelines using ArgoCD for GitOps-based Kubernetes deployments. ArgoCD implements the pull-based deployment model — the cluster pulls desired state from Git rather than a pipeline pushing to it. This is more secure than push-based pipelines because the cluster never exposes an inbound attack surface. Security integration in CI/CD is shift-left security in practice: Trivy scans container images for CVEs, Gitleaks prevents secrets from entering the codebase, Checkov validates IaC security before deployment, SonarCloud performs static application security testing, OWASP ZAP runs dynamic application security testing against deployed applications. This is exactly what CLCS 605 Unit 6 covers.",
+        },
+        whatIsIt:
+          "Automated pipelines that build, test, secure, and deploy software from code commit to production without manual intervention.",
+        whyItMatters:
+          "CI/CD enables the deployment velocity and reliability that cloud-native applications require. Manual deployments are too slow and error-prone for cloud operations.",
+        howItWorks:
+          "Developer commits code to Git. Pipeline triggers automatically. Code is built, unit tested, security scanned (Trivy, Gitleaks, Checkov, SonarCloud). Integration tests run. Container image is built and pushed to registry. ArgoCD detects image change and syncs deployment to Kubernetes cluster. OWASP ZAP runs against deployed application.",
+        whereUsed:
+          "Peter’s production pipelines. AWS CodePipeline for AWS-native CI/CD. GitHub Actions for cloud-agnostic pipelines. ArgoCD for GitOps Kubernetes deployments.",
+        whatCanGoWrong:
+          "Pipeline secrets exposed in logs. Skipping security scans to speed up pipelines. No rollback mechanism. Insufficient test coverage creating false confidence. Privileged service accounts with excessive permissions.",
+        howSecured:
+          "Secrets stored in AWS Secrets Manager or Vault never in pipeline environment variables. All security tools run as mandatory gates — builds fail on high-severity findings. Least privilege service accounts. Signed container images. Immutable image tags.",
+        howUMGCTests:
+          "CLCS 605 Unit 6 Quiz: Cloud Development and Deployment Concepts. Peter can draw directly from his production pipeline experience for all quiz and discussion questions in this unit.",
+        diagramSpec:
+          "Pipeline flow: Git Commit → Build → Trivy Scan → Gitleaks Scan → Checkov Scan → SonarCloud SAST → Unit Tests → Container Registry → ArgoCD Sync → Kubernetes Cluster → OWASP ZAP DAST → Production.",
+        relatedConcepts: ["cloud-architecture-principles", "iam-and-access-control", "cloud-security-strategy"],
+        crossCourseLinks: [
+          "CLCS 635: full DevOps and automation course",
+          "CTCH 625: threat analysis in deployment pipelines",
+        ],
+      },
+    ],
+  },
+
+  /* ── Unit 7: Cloud Automation and Operations ── */
+  {
+    id: "unit-7",
+    title: "Cloud Automation and Operations",
+    slug: "cloud-automation-and-operations",
+    sourceType: "course-material-derived",
+    concepts: [
+      {
+        id: "cloud-monitoring-observability",
+        title: "Cloud Monitoring and Observability",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "Cloud monitoring is like having hundreds of sensors in your house that track temperature, power usage, and door activity all at once and send you an alert the moment something goes wrong.",
+          intermediate:
+            "Observability in cloud covers three pillars: metrics (numeric measurements over time), logs (timestamped event records), and traces (request flows across distributed services). AWS CloudWatch handles metrics and logs. AWS X-Ray provides distributed tracing. CloudWatch Alarms trigger automated responses. Dashboards provide operational visibility.",
+          advanced:
+            "Modern cloud observability goes beyond monitoring — it enables understanding of system behavior from external outputs. SRE practices use Service Level Indicators, Service Level Objectives, and Error Budgets to balance reliability with deployment velocity. In Peter’s Kubernetes environment, Prometheus and Grafana are the standard observability stack. EKS clusters expose metrics through the Kubernetes metrics server. Distributed tracing with X-Ray or OpenTelemetry tracks requests across microservices. CLCS 615 Unit 6 assignment directly tests monitoring strategy development — designing infrastructure that supports peak traffic with high availability and observability.",
+        },
+        whatIsIt:
+          "The tools, practices, and architectures that provide visibility into cloud system health, performance, and security events.",
+        whyItMatters:
+          "You cannot secure or optimize what you cannot see. Monitoring is the prerequisite for incident response, cost optimization, and performance tuning.",
+        howItWorks:
+          "Agents or SDKs emit metrics, logs, and traces to centralized collection systems. Dashboards visualize data. Alerts fire when thresholds are crossed. Automated runbooks respond to common failure patterns. Log analysis identifies security incidents and performance regressions.",
+        whereUsed:
+          "CloudWatch for AWS infrastructure. Prometheus and Grafana for Kubernetes. AWS Security Hub aggregates security findings. CloudTrail provides audit logs for all API calls.",
+        whatCanGoWrong:
+          "Alert fatigue from too many low-priority alerts drowning critical ones. Missing logs from misconfigured log shipping. Monitoring only infrastructure without application metrics. No correlation between metrics logs and traces making root cause analysis difficult.",
+        howSecured:
+          "Centralized log storage in S3 with immutable object lock. CloudTrail in all regions. Security Hub for compliance monitoring. GuardDuty for threat detection. SIEM integration for security event correlation.",
+        howUMGCTests:
+          "CLCS 605 Unit 7 Assignment: Cloud Backup and Monitoring Plan. CLCS 615 Unit 6 Assignment: Cloud Monitoring Strategy Development. Both directly test monitoring design worth significant points.",
+        diagramSpec:
+          "Observability stack diagram: Applications and Infrastructure at bottom emitting Metrics, Logs, Traces upward. Three collection columns: CloudWatch (metrics/logs), X-Ray (traces), CloudTrail (audit). Convergence into Dashboard and Alerting layer at top.",
+        relatedConcepts: ["cloud-architecture-principles", "cicd-pipelines-cloud", "disaster-recovery"],
+        crossCourseLinks: [
+          "CLCS 615 Unit 6: monitoring strategy development assignment",
+          "CLCS 635: DevOps monitoring practices",
+        ],
+      },
+    ],
+  },
+
+  /* ── Unit 8: Cloud Implementation and Operations ── */
+  {
+    id: "unit-8",
+    title: "Cloud Implementation and Operations",
+    slug: "cloud-implementation-and-operations",
+    sourceType: "course-material-derived",
+    concepts: [
+      {
+        id: "cloud-career-readiness",
+        title: "Cloud Career Readiness",
+        sourceType: "course-material-derived",
+        depth: {
+          eli10:
+            "Cloud career readiness means being able to walk into a job on day one and actually do the work — not just talk about it. It means your certifications, projects, and real experience all line up with what employers need.",
+          intermediate:
+            "Cloud career paths include Cloud Architect, Cloud Engineer, DevOps Engineer, Cloud Security Engineer, and Cloud Operations roles. Certifications like AWS SAA, SAP, and SCS-C02 validate knowledge. Real project experience demonstrates application. Graduate education provides the strategic and governance thinking layer that certifications alone do not.",
+          advanced:
+            "Peter already operates at the intersection of cloud architecture, DevSecOps, and security — the highest-value profile in the current market. His AWS certifications (SAA-C03, SAP-C02, SCS-C02) combined with production EKS, ArgoCD, and security toolchain experience position him above most graduate students entering cloud careers. The CLCS program adds the academic framework, governance thinking, and communication skills that translate technical expertise into leadership capability. The Unit 8 Discussion asks Peter to reflect on his own readiness and perspective — he has more to draw from than any typical student in this course.",
+        },
+        whatIsIt:
+          "The combination of technical skills, certifications, real-world experience, and professional communication ability that qualifies a cloud professional for advanced roles.",
+        whyItMatters:
+          "The cloud skills market is large but the top tier of professionals — those who combine architecture thinking, security depth, and operational experience — is small. That is the tier Peter is building toward.",
+        howItWorks:
+          "Technical skills are validated through certifications and demonstrated through projects. Strategic thinking is developed through graduate coursework and professional experience. Communication and leadership skills are developed through academic writing, peer collaboration, and professional engagement.",
+        whereUsed:
+          "Job interviews, promotion decisions, consulting proposals, and EB2-NIW extraordinary ability petitions — Peter’s long-term goal.",
+        whatCanGoWrong:
+          "Certifications without practical experience. Practical experience without strategic thinking framework. Technical depth without communication ability. Not documenting accomplishments as evidence.",
+        howSecured:
+          "Not applicable — this is a career concept not a security concept.",
+        howUMGCTests:
+          "CLCS 605 Unit 8 Discussion: Personal Growth in the Cloud — Reflecting on Your Readiness and Perspective. Peter should write this from a position of genuine strength drawing on two years of cloud study and production experience.",
+        diagramSpec:
+          "Career progression diagram: Foundation (certifications) → Application (production projects) → Strategy (graduate coursework) → Leadership (architecture decisions) → Recognition (EB2-NIW portfolio). Peter is currently at Application moving into Strategy.",
+        relatedConcepts: ["cloud-architecture-principles", "cloud-security-strategy", "cicd-pipelines-cloud"],
+        crossCourseLinks: [
+          "CLCS 690 Capstone: demonstrates full program mastery",
+          "All courses: build EB2-NIW portfolio evidence",
+        ],
+      },
+    ],
+  },
+];
+
+/* ── CLCS 605 course (program hierarchy) ── */
+
 const clcs605 = buildCourse({
   slug: "clcs-605-introduction-to-cloud-computing",
   code: "CLCS 605",
@@ -50,244 +646,28 @@ const clcs605 = buildCourse({
   description:
     "Establishes the operating vocabulary for cloud service models, responsibility boundaries, and the business case for cloud adoption.",
   learningOutcomes: [
-    "Differentiate cloud service and deployment models in business and technical terms.",
-    "Explain shared responsibility boundaries across provider and customer teams.",
-    "Evaluate cloud adoption tradeoffs around risk, agility, and governance.",
+    "Analyze organizational infrastructure needs and align with appropriate cloud computing strategies.",
+    "Evaluate IaaS, PaaS, SaaS service models and public, private, hybrid deployment configurations.",
+    "Assess cloud security risks and employ IAM, data protection, and network security controls.",
+    "Plan scalable and cost-optimized cloud infrastructure using architecture principles and serverless patterns.",
+    "Explain cloud development, deployment, integration, migration, and post-deployment operations.",
+    "Explain cloud automation, orchestration, monitoring, backup, and disaster recovery solutions.",
   ],
   cyberOverlap: [
     "Connects cloud shared responsibility to cybersecurity ownership and control accountability.",
     "Introduces IAM and data protection concepts that later recur in CTCH security courses.",
   ],
-  topics: [
+  topics: clcs605DeepTopics.map((ut) =>
     buildTopic({
-      slug: "cloud-service-models",
-      title: "Cloud Service Models and Deployment Choices",
-      description:
-        "Frames IaaS, PaaS, SaaS, and public-private-hybrid deployment choices as operating decisions rather than marketing labels.",
-      umgcWeek: "Week 1",
-      assessmentRelevance:
-        "Supports course discussions, architecture comparisons, and early program roadmap decisions.",
-      objective:
-        "Choose the right cloud operating model for a workload and explain the tradeoffs clearly.",
-      summary:
-        "The durable skill in this opening course is not memorizing provider terminology. It is recognizing which parts of the stack the learner owns, which parts are abstracted away, and how those decisions affect scale, security, and change velocity.",
-      sections: [
-        {
-          heading: "Compare service models by ownership boundary",
-          content: [
-            "IaaS keeps more operating responsibility with the learner, which creates flexibility but also demands stronger control over patching, network design, and workload hardening.",
-            "PaaS and SaaS move responsibility upward into managed layers. That reduces undifferentiated operations work, but it also narrows how much of the platform can be tuned directly.",
-          ],
-        },
-        {
-          heading: "Deployment models shape risk and governance",
-          content: [
-            "Public, private, and hybrid cloud choices are usually made because of data sensitivity, integration constraints, cost posture, or regulatory boundaries rather than abstract ideology.",
-            "UMGC-style evaluation work will expect these choices to be justified using business, architecture, and risk language together.",
-          ],
-        },
-      ],
-      bullets: [
-        "Service models are ownership choices before they are product choices.",
-        "Deployment model selection affects governance, latency, and integration complexity.",
-        "A strong answer compares tradeoffs instead of claiming a single universal best model.",
-      ],
-      concepts: [
-        buildConcept({
-          id: "cloud-service-models",
-          name: "Cloud Service Models",
-          explanations: {
-            eli10: "Cloud service models are different ways of deciding how much of the computer setup you run yourself and how much the provider runs for you.",
-            intermediate:
-              "Cloud service models define which layers of the technology stack stay under customer control and which layers are managed by the cloud provider.",
-            advanced:
-              "Cloud service models are operating abstractions that reallocate accountability across infrastructure, platform, and application layers with direct implications for governance, automation, and risk.",
-          },
-          whatIsIt: "A framework for distinguishing IaaS, PaaS, and SaaS based on who manages each system layer.",
-          whyItMatters:
-            "It determines what the learner must secure, configure, monitor, and budget for in a production environment.",
-          howItWorks:
-            "The more the provider manages, the more the customer trades low-level control for speed and operational leverage.",
-          whereUsed: ["Platform selection", "Migration planning", "Cloud operating model design"],
-          whatCanGoWrong: [
-            "Choosing a model that hides required controls",
-            "Assuming managed means fully secure",
-            "Underestimating integration or customization limits",
-          ],
-          howSecured: [
-            "Map controls to the actual service boundary",
-            "Document retained customer responsibilities",
-            "Review identity and data-protection requirements for each model",
-          ],
-          howUMGCTests: [
-            "Comparison essays",
-            "Architecture justification prompts",
-            "Case-study analysis questions",
-          ],
-          diagramSpec:
-            "Three-column stack diagram comparing customer-owned and provider-owned layers for IaaS, PaaS, and SaaS.",
-          relatedConcepts: ["shared-responsibility-model", "cloud-adoption-drivers"],
-        }),
-        buildConcept({
-          id: "cloud-adoption-drivers",
-          name: "Cloud Adoption Drivers",
-          explanations: {
-            eli10: "Teams move to the cloud because they want faster building, easier scaling, or less hardware to manage.",
-            intermediate:
-              "Cloud adoption drivers are the business and technical reasons an organization chooses cloud delivery over traditional infrastructure.",
-            advanced:
-              "Cloud adoption drivers are strategic pressures that justify cloud migration through agility, resilience, elasticity, financial flexibility, and operating model change.",
-          },
-          whatIsIt:
-            "A set of motives such as scalability, cost flexibility, resilience, and faster delivery that influence cloud strategy.",
-          whyItMatters:
-            "UMGC architecture analysis is stronger when cloud decisions are tied to organizational outcomes rather than only technical preference.",
-          howItWorks:
-            "Drivers are translated into platform requirements, migration priorities, and architecture constraints.",
-          whereUsed: ["Business case development", "Migration proposals", "Executive architecture communication"],
-          whatCanGoWrong: [
-            "Treating cloud as automatically cheaper",
-            "Ignoring governance changes required to realize speed",
-            "Migrating workloads with no clear outcome target",
-          ],
-          howSecured: [
-            "Add governance guardrails early",
-            "Define measurable adoption outcomes",
-            "Evaluate sensitive workloads before migration",
-          ],
-          howUMGCTests: [
-            "Strategic recommendation papers",
-            "Discussion board prompts",
-            "Cloud adoption scenario critiques",
-          ],
-          relatedConcepts: ["cloud-service-models", "shared-responsibility-model"],
-        }),
-      ],
+      slug: ut.slug,
+      title: ut.title,
+      description: ut.concepts.map((c) => c.whatIsIt).join(" "),
+      umgcWeek: `Week ${ut.id.replace("unit-", "")}`,
+      sourceType: "syllabus-derived",
+      assessmentRelevance: ut.concepts.map((c) => c.howUMGCTests).join(" "),
+      concepts: ut.concepts.map(deepToBaseConcept),
     }),
-    buildTopic({
-      slug: "shared-responsibility-and-iam",
-      title: "Shared Responsibility and Identity Boundaries",
-      description:
-        "Clarifies which security and operational controls stay with the learner after moving into provider-managed infrastructure.",
-      umgcWeek: "Week 3",
-      assessmentRelevance:
-        "Used in security responsibility mapping, control analysis, and future cyber bridge behavior.",
-      objective:
-        "Map provider responsibilities, customer responsibilities, and identity control points without ambiguity.",
-      summary:
-        "This topic moves from general cloud terminology into control ownership. It is the point where cloud architecture becomes inseparable from security operations because identity, configuration, and data handling remain customer obligations even in highly managed environments.",
-      sections: [
-        {
-          heading: "Responsibility shifts but never disappears",
-          content: [
-            "Moving a workload to the cloud changes who operates facilities, hardware, and managed runtimes. It does not remove accountability for data classification, access governance, or secure workload design.",
-            "The learner needs to reason about control ownership at the service boundary, not at the marketing boundary.",
-          ],
-        },
-        {
-          heading: "Identity is part of the architecture",
-          content: [
-            "IAM is not a side policy. It is one of the core cloud primitives because it determines who can act, what systems can connect, and how blast radius is controlled.",
-            "This becomes a direct bridge into CTCH cybersecurity work focused on access defense and secure systems operation.",
-          ],
-        },
-      ],
-      bullets: [
-        "Managed infrastructure does not eliminate customer security obligations.",
-        "IAM decisions are architectural because they control both normal operations and incident blast radius.",
-        "Shared responsibility should be mapped in concrete control language, not slogans.",
-      ],
-      concepts: [
-        buildConcept({
-          id: "shared-responsibility-model",
-          name: "Shared Responsibility Model",
-          explanations: {
-            eli10: "The cloud provider protects some parts of the system, but your team still has to protect the parts you control.",
-            intermediate:
-              "The shared responsibility model divides operational and security duties between the provider and the customer based on the service consumed.",
-            advanced:
-              "The shared responsibility model is a control-allocation framework in which provider-managed layers reduce infrastructure toil while preserving customer accountability for identity, data, configuration, and workload risk.",
-          },
-          whatIsIt:
-            "A way to decide which controls are owned by the cloud provider and which remain the customer’s job.",
-          whyItMatters:
-            "Most cloud failures come from misunderstood control ownership rather than provider hardware failure.",
-          howItWorks:
-            "Responsibility moves by service model: the more the provider manages, the narrower but still critical the customer control surface becomes.",
-          whereUsed: ["Security governance", "Control mapping", "Audit readiness", "Architecture reviews"],
-          whatCanGoWrong: [
-            "Assuming provider defaults cover customer data handling",
-            "Leaving identity ownership undefined",
-            "Failing to monitor managed-service configuration risk",
-          ],
-          howSecured: [
-            "Document control ownership",
-            "Tie IAM and logging to each workload",
-            "Review service-specific security obligations before deployment",
-          ],
-          howUMGCTests: [
-            "Responsibility mapping assignments",
-            "Security comparison essays",
-            "Scenario-based control analysis",
-          ],
-          relatedConcepts: ["identity-and-access-management", "cloud-service-models"],
-          crossCourseLinks: [
-            {
-              courseCode: "CTCH 605",
-              topicSlug: "security-governance-and-ownership",
-              conceptId: "security-control-ownership",
-              rationale:
-                "Both courses require the learner to distinguish who owns preventive, detective, and corrective controls.",
-            },
-          ],
-        }),
-        buildConcept({
-          id: "identity-and-access-management",
-          name: "Identity and Access Management",
-          explanations: {
-            eli10: "IAM is the rulebook for who can sign in and what they are allowed to do.",
-            intermediate:
-              "IAM manages authentication, authorization, role design, and permission boundaries for humans and systems.",
-            advanced:
-              "IAM is the policy and enforcement layer that governs principal identity, privilege scope, trust relationships, and access governance across cloud workloads.",
-          },
-          whatIsIt:
-            "The set of mechanisms that control user, service, and system access to cloud resources.",
-          whyItMatters:
-            "Identity is often the shortest path to privilege escalation or data exposure if poorly designed.",
-          howItWorks:
-            "Principals authenticate, policies evaluate permissions, and roles or groups determine what actions are allowed in each context.",
-          whereUsed: ["Cloud administration", "Application access control", "DevOps pipelines", "Incident response"],
-          whatCanGoWrong: [
-            "Overprivileged roles",
-            "Long-lived credentials",
-            "Weak separation of duties",
-          ],
-          howSecured: [
-            "Least-privilege roles",
-            "Federated identity",
-            "Multi-factor authentication",
-            "Short-lived credentials",
-          ],
-          howUMGCTests: [
-            "Role design scenarios",
-            "Security architecture prompts",
-            "Cross-course concept comparisons",
-          ],
-          relatedConcepts: ["shared-responsibility-model", "network-segmentation"],
-          crossCourseLinks: [
-            {
-              courseCode: "CTCH 625",
-              topicSlug: "access-defense-for-systems-and-networks",
-              conceptId: "defensive-access-control",
-              rationale:
-                "IAM in cloud environments overlaps directly with access defense for systems and networks.",
-            },
-          ],
-        }),
-      ],
-    }),
-  ],
+  ),
 });
 
 const clcs615 = buildCourse({
@@ -1290,3 +1670,26 @@ export const clcsProgram: Program = {
     },
   ],
 };
+
+/* ── Deep concept lookup helpers ── */
+
+export function getConceptsForUnit(
+  courseCode: string,
+  unitSlug: string,
+): Concept[] {
+  if (courseCode === "CLCS 605") {
+    const topic = clcs605DeepTopics.find((t) => t.slug === unitSlug);
+    return topic?.concepts ?? [];
+  }
+  return [];
+}
+
+export function getConceptsForUnitNumber(
+  courseCode: string,
+  unitNumber: number,
+): Concept[] {
+  if (courseCode === "CLCS 605" && unitNumber >= 1 && unitNumber <= clcs605DeepTopics.length) {
+    return clcs605DeepTopics[unitNumber - 1].concepts;
+  }
+  return [];
+}
