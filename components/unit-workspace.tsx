@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { appendActivityEvent } from "@/lib/app-state";
+import { patchAssignmentRecord, readAssignmentRecords } from "@/lib/assignment-store";
 import {
   formatUnitWeekLabel,
   getUnitPointsTotal,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/syllabus-data";
 import { AssignmentWorkspace } from "@/components/assignment-workspace";
 import { TutorPanel } from "@/components/tutor-panel";
+import { AssignmentRecord, AssignmentStatus } from "@/lib/types";
 
 type UnitWorkspaceProps = {
   course: SyllabusCourse;
@@ -22,8 +24,6 @@ type UnitWorkspaceProps = {
 
 type PromptMode = "assignment" | "discussion" | "quiz";
 
-type AssignmentStatus = "not-started" | "in-progress" | "submitted" | "complete";
-
 type PromptState = {
   id: string;
   content: string;
@@ -31,15 +31,16 @@ type PromptState = {
 } | null;
 
 const assignmentStatuses: { label: string; value: AssignmentStatus }[] = [
-  { label: "Not Started", value: "not-started" },
-  { label: "In Progress", value: "in-progress" },
+  { label: "Not started", value: "not_started" },
+  { label: "Draft started", value: "draft_started" },
+  { label: "Needs revision", value: "needs_revision" },
+  { label: "Ready to submit", value: "ready_to_submit" },
   { label: "Submitted", value: "submitted" },
-  { label: "Complete", value: "complete" },
+  { label: "Peer replies needed", value: "peer_replies_needed" },
+  { label: "Overdue", value: "overdue" },
+  { label: "Quiz pending", value: "quiz_pending" },
+  { label: "Practical evidence needed", value: "practical_needed" },
 ];
-
-function getAssignmentStatusKey(assignmentId: string) {
-  return `cns_assignment_${assignmentId}_status`;
-}
 
 function getTopicKey(courseCode: string, unitNumber: number, index: number) {
   return `cns_topic_${courseCode}_${unitNumber}_${index}_understood`;
@@ -113,24 +114,48 @@ function getTypeBadge(type: SyllabusAssignment["type"]) {
   return "border-emerald-400/30 bg-emerald-500/10 text-emerald-100";
 }
 
+function getStatusBadge(status?: AssignmentStatus) {
+  switch (status) {
+    case "ready_to_submit":
+    case "submitted":
+      return "border-emerald-400/35 bg-emerald-500/10 text-emerald-100";
+    case "needs_revision":
+    case "peer_replies_needed":
+      return "border-amber-400/35 bg-amber-500/10 text-amber-100";
+    case "overdue":
+    case "practical_needed":
+      return "border-rose-400/35 bg-rose-500/10 text-rose-100";
+    case "draft_started":
+    case "quiz_pending":
+      return "border-sky-400/35 bg-sky-500/10 text-sky-100";
+    default:
+      return "border-border/70 bg-panel/70 text-muted";
+  }
+}
+
+function formatStatusLabel(status?: AssignmentStatus) {
+  return assignmentStatuses.find((item) => item.value === status)?.label ?? "Not started";
+}
+
 export function UnitWorkspace({ course, unit }: UnitWorkspaceProps) {
   const [unitStarted, setUnitStarted] = useState(false);
-  const [assignmentState, setAssignmentState] = useState<Record<string, AssignmentStatus>>({});
+  const [assignmentRecords, setAssignmentRecords] = useState<Record<string, AssignmentRecord>>({});
   const [topicUnderstood, setTopicUnderstood] = useState<Record<number, boolean>>({});
   const [discussionDrafts, setDiscussionDrafts] = useState<Record<string, string>>({});
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(unit.assignments[0]?.id ?? "");
   const [pendingPrompt, setPendingPrompt] = useState<PromptState>(null);
 
   useEffect(() => {
-    const nextStatuses: Record<string, AssignmentStatus> = {};
+    const nextRecords: Record<string, AssignmentRecord> = {};
     const nextTopics: Record<number, boolean> = {};
     const nextDiscussionDrafts: Record<string, string> = {};
+    const storedAssignments = readAssignmentRecords();
 
     unit.assignments.forEach((assignment) => {
-      const storedStatus = readString(getAssignmentStatusKey(assignment.id)) as AssignmentStatus;
-      nextStatuses[assignment.id] = assignmentStatuses.some((status) => status.value === storedStatus)
-        ? storedStatus
-        : "not-started";
+      const storedRecord = storedAssignments.find((record) => record.id === assignment.id);
+      if (storedRecord) {
+        nextRecords[assignment.id] = storedRecord;
+      }
 
       if (assignment.type === "discussion") {
         nextDiscussionDrafts[assignment.id] = readString(getDraftKey(assignment.id));
@@ -141,7 +166,7 @@ export function UnitWorkspace({ course, unit }: UnitWorkspaceProps) {
       nextTopics[index] = readBoolean(getTopicKey(course.code, unit.unit, index));
     });
 
-    setAssignmentState(nextStatuses);
+    setAssignmentRecords(nextRecords);
     setTopicUnderstood(nextTopics);
     setDiscussionDrafts(nextDiscussionDrafts);
     setUnitStarted(readBoolean(getUnitStartedKey(course.code, unit.unit)));
@@ -168,11 +193,11 @@ Help him prepare to ace everything in this unit.`;
   }
 
   function updateAssignmentStatus(assignmentId: string, status: AssignmentStatus) {
-    writeString(getAssignmentStatusKey(assignmentId), status);
+    const nextRecord = patchAssignmentRecord(assignmentId, { status });
     appendActivityEvent(`Set ${assignmentId} status to ${status}`, course.code);
-    setAssignmentState((current) => ({
+    setAssignmentRecords((current) => ({
       ...current,
-      [assignmentId]: status,
+      ...(nextRecord ? { [assignmentId]: nextRecord } : {}),
     }));
   }
 
@@ -198,6 +223,13 @@ Help him prepare to ace everything in this unit.`;
       content,
       mode,
     });
+  }
+
+  function handleAssignmentRecordUpdate(nextRecord: AssignmentRecord) {
+    setAssignmentRecords((current) => ({
+      ...current,
+      [nextRecord.id]: nextRecord,
+    }));
   }
 
   return (
@@ -239,6 +271,12 @@ Help him prepare to ace everything in this unit.`;
         </div>
         {unit.assignments.map((assignment) => (
           <article key={assignment.id} className="rounded-card border border-border/70 bg-panel/80 p-6">
+            {(() => {
+              const assignmentRecord = assignmentRecords[assignment.id];
+              const readinessScore = assignmentRecord?.readinessScore ?? 0;
+              const status = assignmentRecord?.status ?? (assignment.type === "quiz" ? "quiz_pending" : "not_started");
+
+              return (
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
@@ -252,18 +290,39 @@ Help him prepare to ace everything in this unit.`;
                   <span className="rounded-full border border-border/70 px-3 py-1 text-xs text-muted">
                     {assignment.points} points
                   </span>
+                  <span className={`rounded-full border px-3 py-1 text-xs ${getStatusBadge(status)}`}>
+                    {formatStatusLabel(status)}
+                  </span>
                 </div>
                 <h2 className="mt-3 text-2xl font-semibold text-text">{assignment.title}</h2>
                 <div className="mt-2 text-sm text-muted">Due: {assignment.dueDate}</div>
                 {assignment.description ? (
                   <p className="mt-4 text-sm leading-7 text-muted">{assignment.description}</p>
                 ) : null}
+                <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted">
+                  {assignment.requiredWordCount ? (
+                    <span className="rounded-full border border-border/70 px-3 py-1">
+                      {assignment.requiredWordCount}
+                    </span>
+                  ) : null}
+                  <span className="rounded-full border border-border/70 px-3 py-1">
+                    {assignmentRecord?.citationsRequired ? "Citations required" : "Citations not stated"}
+                  </span>
+                  <span className="rounded-full border border-border/70 px-3 py-1">
+                    Readiness {readinessScore}%
+                  </span>
+                </div>
+                {assignmentRecord?.missingItems?.length ? (
+                  <div className="mt-4 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                    Required action: {assignmentRecord.missingItems[0]}
+                  </div>
+                ) : null}
               </div>
 
               <div className="min-w-56 rounded-card border border-border/70 bg-panelAlt/55 p-4">
                 <div className="text-xs uppercase tracking-[0.18em] text-muted">Status</div>
                 <select
-                  value={assignmentState[assignment.id] ?? "not-started"}
+                  value={status}
                   onChange={(event) =>
                     updateAssignmentStatus(assignment.id, event.target.value as AssignmentStatus)
                   }
@@ -275,6 +334,18 @@ Help him prepare to ace everything in this unit.`;
                     </option>
                   ))}
                 </select>
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.18em] text-muted">
+                    <span>Readiness</span>
+                    <span>{readinessScore}%</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-panel ring-1 ring-inset ring-white/5">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-accent/60 to-accent transition-[width] duration-300"
+                      style={{ width: `${readinessScore}%` }}
+                    />
+                  </div>
+                </div>
                 <div className="mt-4 flex flex-col gap-2">
                   <button
                     type="button"
@@ -305,6 +376,8 @@ ${assignment.description ?? assignment.title}`,
                 </div>
               </div>
             </div>
+              );
+            })()}
           </article>
         ))}
       </section>
@@ -527,6 +600,7 @@ ${draft}`,
           courseName={course.name}
           rubric={selectedAssignment.rubric}
           dueDate={selectedAssignment.dueDate}
+          onAssignmentUpdate={handleAssignmentRecordUpdate}
         />
       ) : null}
     </div>

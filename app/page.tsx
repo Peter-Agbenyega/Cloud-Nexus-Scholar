@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { academicSessions, getActiveAcademicSession } from "@/lib/academic-plan";
+import { readAssignmentRecords } from "@/lib/assignment-store";
 import {
   ActivityEvent,
   getActiveCourseSnapshots,
@@ -12,6 +13,7 @@ import {
   getWidthClass,
   readActivityFeed,
 } from "@/lib/app-state";
+import { AssignmentRecord } from "@/lib/types";
 
 function getGreetingByTime() {
   const hour = new Date().getHours();
@@ -30,6 +32,7 @@ function getGreetingByTime() {
 export default function HomePage() {
   const activeSession = getActiveAcademicSession();
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
+  const [assignmentRecords, setAssignmentRecords] = useState<AssignmentRecord[]>([]);
   const [currentDate, setCurrentDate] = useState("");
   const [dashboardMetrics, setDashboardMetrics] = useState(() => getDashboardMetrics());
   const [tutorStatus, setTutorStatus] = useState<"checking" | "online" | "offline">("checking");
@@ -41,6 +44,7 @@ export default function HomePage() {
 
     try {
       setActivityFeed(readActivityFeed().slice(0, 10));
+      setAssignmentRecords(readAssignmentRecords());
       setDashboardMetrics(getDashboardMetrics());
       setCurrentDate(
         new Intl.DateTimeFormat("en-US", {
@@ -89,6 +93,29 @@ export default function HomePage() {
     () => getActiveCourseSnapshots(["CLCS 605", "CLCS 615"]),
     [],
   );
+
+  const assignmentSnapshot = useMemo(() => {
+    const submitted = assignmentRecords.filter((record) => record.status === "submitted");
+    const notSubmitted = assignmentRecords.filter((record) => record.status !== "submitted");
+    const peerRepliesNeeded = assignmentRecords.filter((record) => record.status === "peer_replies_needed");
+    const readyNow = assignmentRecords.filter((record) => record.status === "ready_to_submit");
+    const attentionSoon = [...notSubmitted].sort((a, b) => {
+      const overdueBias = a.status === "overdue" ? -1 : b.status === "overdue" ? 1 : 0;
+      if (overdueBias !== 0) {
+        return overdueBias;
+      }
+
+      return (b.readinessScore ?? 0) - (a.readinessScore ?? 0);
+    });
+
+    return {
+      submitted,
+      notSubmitted,
+      peerRepliesNeeded,
+      readyNow,
+      attentionSoon,
+    };
+  }, [assignmentRecords]);
 
   const stats = [
     {
@@ -167,6 +194,29 @@ export default function HomePage() {
       href: "/roadmap",
     },
   ];
+
+  function getAssignmentTone(status: AssignmentRecord["status"]) {
+    switch (status) {
+      case "ready_to_submit":
+      case "submitted":
+        return "border-emerald-400/35 bg-emerald-500/10 text-emerald-100";
+      case "needs_revision":
+      case "peer_replies_needed":
+        return "border-amber-400/35 bg-amber-500/10 text-amber-100";
+      case "overdue":
+      case "practical_needed":
+        return "border-rose-400/35 bg-rose-500/10 text-rose-100";
+      case "draft_started":
+      case "quiz_pending":
+        return "border-sky-400/35 bg-sky-500/10 text-sky-100";
+      default:
+        return "border-border/70 bg-panel/70 text-muted";
+    }
+  }
+
+  function formatAssignmentStatus(status: AssignmentRecord["status"]) {
+    return status.replaceAll("_", " ");
+  }
 
   return (
     <div className="space-y-8">
@@ -273,6 +323,82 @@ export default function HomePage() {
               <div className="text-xs uppercase tracking-[0.18em] text-muted">{stat.label}</div>
               <div className="mt-3 text-3xl font-semibold text-text">{stat.value}</div>
             </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-card border border-border/70 bg-panel/80 p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-accent">Submission dashboard</div>
+            <h2 className="mt-2 text-2xl font-semibold text-text">Academic submission intelligence</h2>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-muted">
+              See which assignments are submitted, which are still open, which discussions still need peer replies, and which drafts are blocked by missing citations, word count, or practical evidence.
+            </p>
+          </div>
+          <div className="grid min-w-72 gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-border/70 bg-panelAlt/55 px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted">Submitted</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{assignmentSnapshot.submitted.length}</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-panelAlt/55 px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted">Not submitted</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{assignmentSnapshot.notSubmitted.length}</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-panelAlt/55 px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted">Peer replies needed</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{assignmentSnapshot.peerRepliesNeeded.length}</div>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-panelAlt/55 px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted">Ready now</div>
+              <div className="mt-2 text-2xl font-semibold text-text">{assignmentSnapshot.readyNow.length}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 xl:grid-cols-2">
+          {assignmentSnapshot.attentionSoon.slice(0, 6).map((assignment) => (
+            <article key={assignment.id} className="rounded-2xl border border-border/70 bg-panelAlt/55 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-accent">
+                    {assignment.course} {assignment.unit}
+                  </div>
+                  <h3 className="mt-2 text-lg font-semibold text-text">{assignment.title}</h3>
+                </div>
+                <span className={`rounded-full border px-3 py-1 text-xs capitalize ${getAssignmentTone(assignment.status)}`}>
+                  {formatAssignmentStatus(assignment.status)}
+                </span>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
+                <span className="rounded-full border border-border/70 px-3 py-1">{assignment.type}</span>
+                <span className="rounded-full border border-border/70 px-3 py-1">Due: {assignment.dueDate}</span>
+                <span className="rounded-full border border-border/70 px-3 py-1">
+                  {assignment.wordCountMin
+                    ? `${assignment.wordCountMin}${assignment.wordCountMax ? `-${assignment.wordCountMax}` : "+"} words`
+                    : "Word count not parsed"}
+                </span>
+                <span className="rounded-full border border-border/70 px-3 py-1">
+                  {assignment.citationsRequired ? "Citations required" : "Citations not stated"}
+                </span>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between text-sm text-muted">
+                <span>Submission readiness</span>
+                <span>{assignment.readinessScore}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-panel ring-1 ring-inset ring-white/5">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-accent/60 to-accent transition-[width] duration-300"
+                  style={{ width: `${assignment.readinessScore}%` }}
+                />
+              </div>
+
+              <div className="mt-4 text-sm text-text">
+                Required action: {assignment.missingItems[0] || assignment.warnings[0] || "Open the unit assignment detail view to continue."}
+              </div>
+            </article>
           ))}
         </div>
       </section>
