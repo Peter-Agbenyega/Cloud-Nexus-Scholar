@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 
+import { AIPipeline } from "@/components/ai-pipeline";
 import { ProfessorModeTracker } from "@/components/professor-mode-tracker";
 import { QuizScoreTracker } from "@/components/quiz-score-tracker";
 import { TopicLessonShell } from "@/components/topic-lesson-shell";
-import { TutorPanel } from "@/components/tutor-panel";
 import { getTopicPosition } from "@/lib/course-helpers";
 import { getCourseBySlug, getTopicBySlug } from "@/lib/programs";
 
@@ -39,7 +39,6 @@ export default async function TopicLessonPage({ params }: TopicLessonPageProps) 
     .join(" ");
 
   const courseCode = course?.code ?? fallbackCourseCode;
-  const courseName = course?.title ?? fallbackCourseCode;
   const topicTitle = topic?.title ?? fallbackTopicTitle;
 
   return (
@@ -48,11 +47,13 @@ export default async function TopicLessonPage({ params }: TopicLessonPageProps) 
 
       <div className="flex items-center gap-4">
         <div className="h-px flex-1 bg-border/70" />
-        <div className="text-xs uppercase tracking-[0.24em] text-accent">Your Private Tutor</div>
+        <div className="text-xs uppercase tracking-[0.24em] text-accent">
+          Academic Intelligence Pipeline
+        </div>
         <div className="h-px flex-1 bg-border/70" />
       </div>
 
-      <TutorPanel courseCode={courseCode} courseName={courseName} topicTitle={topicTitle} />
+      <AIPipeline courseCode={courseCode} topicTitle={topicTitle} mode="concept" />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ProfessorModeTracker courseCode={courseCode} topicTitle={topicTitle} />

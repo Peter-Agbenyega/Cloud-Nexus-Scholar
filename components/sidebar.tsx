@@ -3,84 +3,89 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type NavItem = {
-  icon: string;
-  label: string;
-  description: string;
-  href: string;
-  badge?: string;
-};
+import { useCompletedTopics } from "@/hooks/use-completed-topics";
+import { getTopicPosition, pluralize } from "@/lib/course-helpers";
+import { getCourseBySlug, getCourses, getPrograms, getTopicBySlug } from "@/lib/programs";
 
-const navItems: NavItem[] = [
+const navItems = [
+  { icon: "🏠", label: "Home", href: "/", description: "Private academic workspace", badge: null },
   {
-    icon: "🏠",
-    label: "Home",
-    description: "Your command center",
-    href: "/",
-  },
-  {
-    icon: "🧩",
+    icon: "✍️",
     label: "Workspace",
-    description: "Paste → get answer → submit",
     href: "/workspace",
+    description: "Paste · Get Answer · Submit",
+    badge: "Start Here",
   },
-  {
-    icon: "🧠",
-    label: "Study",
-    description: "Practice · Flash Cards · Quiz Mode",
-    href: "/study",
-    badge: "New",
-  },
-  {
-    icon: "📖",
-    label: "Library",
-    description: "Notes and integrity scanner",
-    href: "/library",
-  },
-  {
-    icon: "📚",
-    label: "CLCS 605",
-    description: "Completed · Summer 2026",
-    href: "/courses/clcs-605-introduction-to-cloud-computing/unit/1",
-    badge: "Done",
-  },
-  {
-    icon: "📗",
-    label: "CLCS 615",
-    description: "Completed · Summer 2026",
-    href: "/courses/clcs-615-cloud-services-and-technologies/unit/1",
-    badge: "Done",
-  },
-  {
-    icon: "📅",
-    label: "Planner",
-    description: "Weekly tasks",
-    href: "/planner",
-  },
-  {
-    icon: "🛡️",
-    label: "Sandbox",
-    description: "Cyber scenarios",
-    href: "/sandbox",
-  },
-  {
-    icon: "🔍",
-    label: "Resources",
-    description: "Course materials",
-    href: "/resources",
-  },
+  { icon: "🗺️", label: "Roadmap", href: "/roadmap", description: "Academic mission control", badge: "Live" },
+  { icon: "🎓", label: "Courses", href: "/courses", description: "UMGC course workspace", badge: "Live" },
+  { icon: "📅", label: "Planner", href: "/planner", description: "UMGC semester command", badge: "Live" },
+  { icon: "📚", label: "Library", href: "/library", description: "Notes and integrity scanner", badge: "Live" },
+  { icon: "🛡️", label: "Sandbox", href: "/sandbox", description: "Cyber scenario training", badge: "Live" },
+  { icon: "🧭", label: "Resources", href: "/resources", description: "Course materials and references", badge: "Live" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const courses = getCourses();
+  const programs = getPrograms();
+  const segments = pathname.split("/").filter(Boolean);
+  const activeCourseSlug = segments[0] === "courses" ? segments[1] : undefined;
+  const activeTopicSlug = segments[0] === "courses" ? segments[2] : undefined;
+  const activeCourse = activeCourseSlug ? getCourseBySlug(activeCourseSlug) : undefined;
+  const activeTopic =
+    activeCourseSlug && activeTopicSlug
+      ? getTopicBySlug(activeCourseSlug, activeTopicSlug)
+      : undefined;
+  const isRoadmap = pathname === "/roadmap";
+  const {
+    completedTopicSet,
+    completedCount,
+    totalTopics,
+    progressPercent,
+    isCompletedCourse,
+    isLoaded,
+  } = useCompletedTopics(activeCourse);
+
+  const currentFocus = isRoadmap
+    ? "Degree roadmap"
+    : activeTopic?.title ?? activeCourse?.title ?? "Private academic workspace";
+  const nextTopic = activeCourse
+    ? activeCourse.topics.find((topic) => !completedTopicSet.has(topic.slug)) ??
+      (activeTopic && !isCompletedCourse ? getTopicPosition(activeCourse, activeTopic.slug)?.nextTopic : undefined) ??
+      activeCourse.topics[0]
+    : undefined;
+  const nextTopicIndex =
+    nextTopic && activeCourse
+      ? activeCourse.topics.findIndex((topic) => topic.slug === nextTopic.slug)
+      : -1;
+  const actionLabel = !activeCourse
+    ? isRoadmap
+      ? "Program overview"
+      : "Current view"
+    : !isLoaded
+      ? "Loading progress"
+      : isCompletedCourse
+        ? "Review completed course"
+        : nextTopicIndex >= 0
+          ? `Continue with topic ${nextTopicIndex + 1}`
+          : "Resume path";
+  const actionBody = !activeCourse
+    ? isRoadmap
+      ? "Track both UMGC programs, credit totals, and bridge concepts from one academic control surface."
+      : "Use the roadmap or course workspace to move through the private study environment."
+    : !isLoaded
+      ? "Saved progress is loading for this browser."
+      : isCompletedCourse
+        ? "You have finished this course on this device. Revisit the first topic for a review pass."
+        : "Jump back into the next topic in the guided sequence.";
 
   return (
-    <aside className="hidden w-80 shrink-0 rounded-shell border border-border/70 bg-panelAlt/85 p-5 shadow-card backdrop-blur lg:flex lg:flex-col">
+    <aside className="hidden w-72 shrink-0 rounded-shell border border-border/70 bg-panelAlt/85 p-5 shadow-card backdrop-blur lg:flex lg:flex-col">
       <div className="rounded-card border border-accent/20 bg-accent/10 p-4">
-        <div className="text-xs uppercase tracking-[0.24em] text-accent">Cloud Nexus Scholar</div>
-        <div className="mt-3 text-2xl font-semibold text-text">Simple navigation</div>
+        <p className="text-xs uppercase tracking-[0.24em] text-accent">Cloud Nexus Scholar</p>
+        <h1 className="mt-3 text-2xl font-semibold text-text">Private academic workspace</h1>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Open the week, ask one question, get the answer, and submit.
+          A single-learner operating system for the UMGC cloud computing and cybersecurity path.
         </p>
       </div>
 
@@ -93,32 +98,102 @@ export function Sidebar() {
               key={item.label}
               href={item.href}
               aria-current={isActive ? "page" : undefined}
-              className={`block rounded-card border p-4 transition ${
+              className={`block rounded-card border px-4 py-3 transition ${
                 isActive
                   ? "border-accent/40 bg-accent/10 shadow-card ring-1 ring-accent/20"
-                  : "border-border/70 bg-panel/70 hover:border-accent/35 hover:bg-panel"
+                  : "border-border/70 bg-panel/70 hover:border-accent/40 hover:bg-panel"
               }`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl">{item.icon}</span>
-                  <div>
-                    <div className="text-base font-semibold text-text">{item.label}</div>
-                    <div className={`mt-1 text-sm ${isActive ? "text-text" : "text-muted"}`}>
-                      {item.description}
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-base" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <div className="text-sm font-semibold text-text">{item.label}</div>
                 </div>
                 {item.badge ? (
-                  <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-accent">
+                  <span className="rounded-full border border-accent/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-accent">
                     {item.badge}
                   </span>
                 ) : null}
+              </div>
+              <div className={`mt-1 text-xs uppercase tracking-[0.18em] ${isActive ? "text-accent" : "text-muted"}`}>
+                {item.description}
               </div>
             </Link>
           );
         })}
       </nav>
+
+      <div className="mt-6 rounded-card border border-border/70 bg-panel/80 p-4">
+        <div className="text-xs uppercase tracking-[0.2em] text-muted">Workspace scope</div>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+          <div className="rounded-2xl border border-border/70 bg-panelAlt/50 px-3 py-3">
+            <div className="text-muted">Programs</div>
+            <div className="mt-2 text-lg font-semibold text-text">{programs.length}</div>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-panelAlt/50 px-3 py-3">
+            <div className="text-muted">Courses</div>
+            <div className="mt-2 text-lg font-semibold text-text">{courses.length}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-auto rounded-card border border-border/70 bg-panel/80 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-muted">Current focus</div>
+            <div className="mt-2 text-lg font-semibold text-text">{currentFocus}</div>
+          </div>
+          <div className="rounded-full border border-border/70 px-3 py-1 text-xs text-muted">
+            {pluralize(courses.length, "course")}
+          </div>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-muted">
+          {activeCourse
+            ? `${pluralize(activeCourse.topics.length, "topic")} in ${activeCourse.title}.`
+            : "Use the roadmap to see the full UMGC path, then move into a course when you want to study."}
+        </p>
+        {activeCourse && totalTopics > 0 ? (
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.18em] text-muted">
+              <span>{completedCount} / {totalTopics} topics completed</span>
+              <span>{progressPercent}%</span>
+            </div>
+            <div
+              className="h-1.5 overflow-hidden rounded-full bg-panelAlt/80 ring-1 ring-inset ring-white/5"
+              role="progressbar"
+              aria-label={`${activeCourse.title} progress`}
+              aria-valuemin={0}
+              aria-valuemax={totalTopics}
+              aria-valuenow={completedCount}
+              aria-valuetext={`${completedCount} of ${totalTopics} topics completed`}
+            >
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-accent/70 via-accent to-accent/85 transition-[width] duration-300"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
+        {activeCourse && nextTopic ? (
+          <div className="mt-4 rounded-2xl border border-accent/20 bg-accent/5 p-3">
+            <div className="text-xs uppercase tracking-[0.18em] text-accent">{actionLabel}</div>
+            <div className="mt-2 text-sm text-muted">{actionBody}</div>
+            <Link
+              href={`/courses/${activeCourse.slug}/${nextTopic.slug}`}
+              className="mt-3 inline-flex text-sm font-medium text-text transition hover:text-accent"
+            >
+              {isCompletedCourse ? `Revisit ${nextTopic.title}` : `Open ${nextTopic.title}`}
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-panelAlt/40 p-3">
+            <div className="text-xs uppercase tracking-[0.18em] text-muted">{actionLabel}</div>
+            <div className="mt-2 text-sm text-muted">{actionBody}</div>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

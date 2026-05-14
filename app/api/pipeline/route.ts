@@ -1,74 +1,126 @@
-import { NextResponse } from "next/server";
+export const runtime = "nodejs";
 
-import type {
-  ScholarPipelineMode,
-  ScholarPipelineResult,
-} from "@/lib/scholar-pipeline";
-import { isScholarCourseCode } from "@/lib/scholar-pipeline";
+type PipelineMode = "assignment" | "concept" | "discussion" | "quiz";
 
 type PipelineRequestBody = {
   question: string;
-  courseCode: "CLCS 605" | "CLCS 615" | "CLCS 625" | "CLCS 635" | "CLCS 645";
+  courseCode: string;
   topicTitle: string;
-  mode: ScholarPipelineMode;
+  assignmentContext?: string;
+  rubric?: Record<string, number>;
+  mode: PipelineMode;
 };
 
-type PipelineClaudePayload = {
-  finalAnswer?: string;
-  rubricCheck?: string;
-  confidence?: number;
+type SourceRecord = {
+  title: string;
+  url: string;
 };
 
-export const runtime = "nodejs";
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions";
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+const VALID_MODES: PipelineMode[] = ["assignment", "concept", "discussion", "quiz"];
 
-const openAiUrl = "https://api.openai.com/v1/chat/completions";
-const perplexityUrl = "https://api.perplexity.ai/chat/completions";
-const anthropicUrl = "https://api.anthropic.com/v1/messages";
-
-function getModeInstruction(mode: ScholarPipelineMode) {
-  if (mode === "discussion") {
-    return "Write this as a polished discussion-ready response in Peter's voice with strong analysis and natural phrasing.";
+function isValidPipelineBody(body: unknown): body is PipelineRequestBody {
+  if (!body || typeof body !== "object") {
+    return false;
   }
 
-  if (mode === "quiz") {
-    return "Turn this into a quiz coaching response with direct answers, short explanations, and likely follow-up questions.";
-  }
+  const candidate = body as Record<string, unknown>;
+  const rubric = candidate.rubric;
 
-  return "Write this as a polished final answer Peter can adapt quickly for class submission.";
+  const rubricIsValid =
+    typeof rubric === "undefined" ||
+    (typeof rubric === "object" &&
+      rubric !== null &&
+      Object.values(rubric).every((value) => typeof value === "number"));
+
+  return (
+    typeof candidate.question === "string" &&
+    typeof candidate.courseCode === "string" &&
+    typeof candidate.topicTitle === "string" &&
+    (typeof candidate.assignmentContext === "undefined" ||
+      typeof candidate.assignmentContext === "string") &&
+    rubricIsValid &&
+    typeof candidate.mode === "string" &&
+    VALID_MODES.includes(candidate.mode as PipelineMode)
+  );
 }
 
-async function generateGptDraft(body: PipelineRequestBody) {
-  const response = await fetch(openAiUrl, {
+function sseEvent(payload: Record<string, unknown>) {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+function extractNeedsSourceTopics(input: string) {
+  const matches = [...input.matchAll(/\[NEEDS_SOURCE:\s*([^\]]+)\]/gi)];
+  return matches.map((match) => match[1]?.trim()).filter(Boolean) as string[];
+}
+
+function normalizeDraft(input: string) {
+  return input.replace(/\[NEEDS_SOURCE:\s*[^\]]+\]/gi, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function parseSourcesFromText(input: string) {
+  const matches = [
+    ...input.matchAll(/SOURCE:\s*(.+?)\s*\|\s*(https?:\/\/[^\s|]+[^\s.,;)\]])/gi),
+  ];
+
+  return matches.map((match) => ({
+    title: match[1].trim(),
+    url: match[2].trim(),
+  }));
+}
+
+function dedupeSources(sources: SourceRecord[]) {
+  const seen = new Set<string>();
+  const next: SourceRecord[] = [];
+
+  for (const source of sources) {
+    const key = source.url.toLowerCase();
+
+    if (!seen.has(key)) {
+      seen.add(key);
+      next.push(source);
+    }
+  }
+
+  return next;
+}
+
+function formatSourceForPrompt(source: SourceRecord) {
+  return `${source.title} | ${source.url}`;
+}
+
+function extractTaggedSection(input: string, tag: string) {
+  const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`\\[${escapedTag}\\]([\\s\\S]*?)(?=\\n\\[[A-Z ]+\\]|$)`, "i");
+  const match = input.match(regex);
+  return match?.[1]?.trim() ?? "";
+}
+
+async function callOpenAI(body: PipelineRequestBody, apiKey: string) {
+  const response = await fetch(OPENAI_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o",
-      max_tokens: 900,
+      model: OPENAI_MODEL,
+      max_tokens: 600,
       messages: [
         {
           role: "system",
-          content: `You are creating a first-pass academic draft for Peter Agbenyega.
-Current course: ${body.courseCode}
-Current topic: ${body.topicTitle}
-${getModeInstruction(body.mode)}
-COMPLETED COURSES (Summer 2026):
-CLCS 605 — Introduction to Cloud Computing:
-ALL 8 UNITS COMPLETE. Grade: A projected.
+          content: `You are the first stage of an academic pipeline for Peter Agbenyega, UMGC graduate student in Cloud Computing Systems. AWS certified (SAA-C03, SAP-C02, SCS-C02). DevSecOps engineer.
+Course: ${body.courseCode} Topic: ${body.topicTitle}
 
-CLCS 615 — Cloud Services and Technologies:
-ALL 8 UNITS COMPLETE. Grade: A projected.
-
-FALL 2026 UPCOMING:
-CLCS 625 — Cloud Security and Compliance
-CLCS 635 — Cloud Infrastructure Management
-CLCS 645 — Advanced Cloud Architecture
-
-When helping with Fall courses, apply everything Peter learned in Summer 2026 as relevant context.
-Connect new concepts to what he already mastered.
-Keep it practical, specific, and grounded in cloud computing.`,
+Your job in this pipeline:
+1. Answer the question clearly at graduate level
+2. Structure the answer logically
+3. Flag where real sources or citations are needed by writing [NEEDS_SOURCE: topic] in your response
+4. Keep your answer to 3-4 paragraphs maximum
+5. Connect to Peter's AWS and DevSecOps experience`,
         },
         {
           role: "user",
@@ -79,221 +131,237 @@ Keep it practical, specific, and grounded in cloud computing.`,
   });
 
   if (!response.ok) {
-    throw new Error("GPT-4o draft stage failed.");
+    const errorText = await response.text();
+
+    if (errorText.includes("model_not_found")) {
+      throw new Error(
+        `OpenAI model access failed for "${OPENAI_MODEL}". Set OPENAI_MODEL in Vercel to an allowed model such as gpt-4o-mini.`,
+      );
+    }
+
+    throw new Error(`OpenAI request failed: ${errorText}`);
   }
 
   const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: { message?: { content?: string } }[];
   };
 
   return payload.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-async function gatherSources(body: PipelineRequestBody) {
-  const response = await fetch(perplexityUrl, {
+async function callPerplexity(topic: string, apiKey: string) {
+  const response = await fetch(PERPLEXITY_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "llama-3.1-sonar-large-128k-online",
-      max_tokens: 900,
+      model: "sonar-pro",
+      max_tokens: 400,
       messages: [
         {
           role: "system",
           content:
-            "You are a research assistant. Return concise research notes with source URLs. Prefer NIST, official cloud docs, peer-reviewed papers, and reputable industry sources.",
+            "Find authoritative sources for academic use. Return only real URLs from official sources: NIST, AWS docs, IEEE, ACM, peer-reviewed journals. Format: SOURCE: [title] | [url]",
         },
         {
           role: "user",
-          content: `Question: ${body.question}
-Course: ${body.courseCode}
-Topic: ${body.topicTitle}
-Return concise notes and source URLs Peter can rely on.`,
+          content: `Find sources for: ${topic} in context of cloud computing graduate study`,
         },
       ],
     }),
   });
 
   if (!response.ok) {
-    throw new Error("Sources stage failed.");
+    throw new Error(`Perplexity request failed: ${await response.text()}`);
   }
 
   const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-    citations?: string[];
+    choices?: { message?: { content?: string } }[];
   };
-  const answer = payload.choices?.[0]?.message?.content?.trim() ?? "";
-  const urls = [
-    ...(answer.match(/https?:\/\/[^\s)>\]]+/g) ?? []),
-    ...(payload.citations ?? []),
-  ].map((url) => url.replace(/[.,;:]+$/, ""));
 
-  return {
-    notes: answer,
-    sources: [...new Set(urls)].slice(0, 8),
-  };
+  return payload.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-async function generateFinalAnswer(
-  body: PipelineRequestBody,
-  gptDraft: string,
-  notes: string,
-  sources: string[],
-) {
-  const response = await fetch(anthropicUrl, {
+async function callClaude(params: {
+  body: PipelineRequestBody;
+  apiKey: string;
+  gptDraft: string;
+  sources: SourceRecord[];
+}) {
+  const { body, apiKey, gptDraft, sources } = params;
+  const assignmentLine = body.assignmentContext
+    ? `Assignment context: ${body.assignmentContext}`
+    : "";
+  const rubricLine = body.rubric
+    ? `Rubric criteria to address: ${JSON.stringify(body.rubric)}`
+    : "";
+
+  const response = await fetch(ANTHROPIC_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY as string,
+      "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 1800,
-      system: `You are Professor Scholar, Peter Agbenyega's private academic mentor.
-Course: ${body.courseCode}
-Topic: ${body.topicTitle}
-Mode: ${body.mode}
-COMPLETED COURSES (Summer 2026):
-CLCS 605 — Introduction to Cloud Computing:
-ALL 8 UNITS COMPLETE. Grade: A projected.
+      max_tokens: 1200,
+      system: `You are the final stage of an academic pipeline for Peter Agbenyega. Your job is to take the GPT draft and the found sources and produce ONE polished final answer.
 
-CLCS 615 — Cloud Services and Technologies:
-ALL 8 UNITS COMPLETE. Grade: A projected.
+Peter's profile: UMGC MS Cloud Computing Systems. AWS SAA-C03, SAP-C02, SCS-C02. Daily production work with Docker, Kubernetes, EKS, ArgoCD, Trivy, Gitleaks, Checkov, SonarCloud, OWASP ZAP.
+Course: ${body.courseCode} | Topic: ${body.topicTitle}
 
-FALL 2026 UPCOMING:
-CLCS 625 — Cloud Security and Compliance
-CLCS 635 — Cloud Infrastructure Management
-CLCS 645 — Advanced Cloud Architecture
+${assignmentLine}
+${rubricLine}
 
-When helping with Fall courses, apply everything Peter learned in Summer 2026 as relevant context.
-Connect new concepts to what he already mastered.
-Use Peter's voice: direct, specific, graduate-level, practical, and natural.
-Use the research notes for accuracy but do not fabricate citations.
-Return JSON only with keys: finalAnswer, rubricCheck, confidence.`,
+Your review must:
+1. Critically evaluate the GPT draft for accuracy
+2. Correct any errors or oversimplifications
+3. Integrate the real sources naturally with APA-style citations
+4. Connect concepts to Peter's real AWS experience
+5. Ensure the response addresses every rubric criterion if a rubric was provided
+6. Remove all AI red flag phrases:
+   in conclusion, it is important to note,
+   furthermore, in today's digital landscape,
+   leveraging, it is worth noting, as we can see
+7. Make the writing sound like an experienced
+   cloud professional who is also a graduate
+   student — not a textbook, not a robot
+8. End with a confidence note: one sentence
+   telling Peter what is strong about this
+   response and one thing to verify
+
+Format the final answer clearly with:
+- Main response paragraphs
+- [SOURCES] section at the bottom listing
+  all real citations in APA format
+- [RUBRIC CHECK] section showing which rubric
+  criteria this response addresses
+- [CONFIDENCE] one sentence on strength and
+  one on what to verify`,
       messages: [
         {
           role: "user",
-          content: `Original question:
-${body.question}
+          content: `GPT Draft: ${gptDraft}
 
-GPT draft:
-${gptDraft}
+Found Sources: ${
+            sources.length > 0
+              ? sources.map(formatSourceForPrompt).join(", ")
+              : "Live search unavailable or not required."
+          }
 
-Research notes:
-${notes}
+Original Question: ${body.question}
 
-Sources:
-${sources.join("\n")}
-
-Rubric check should explain how well the answer fits the likely assignment, where Peter should personalize it, and what to verify before submitting.
-Confidence must be an integer from 0 to 100.`,
+Produce the final polished response.`,
         },
       ],
     }),
   });
 
   if (!response.ok) {
-    throw new Error("Claude stage failed.");
+    throw new Error(`Anthropic request failed: ${await response.text()}`);
   }
 
   const payload = (await response.json()) as {
-    content?: Array<{ type?: string; text?: string }>;
+    content?: { type?: string; text?: string }[];
   };
-  const rawText =
+
+  return (
     payload.content
-      ?.filter((block) => block.type === "text" && typeof block.text === "string")
-      .map((block) => block.text)
-      .join("")
-      .trim() ?? "";
-
-  if (!rawText) {
-    throw new Error("Claude returned an empty response.");
-  }
-
-  try {
-    const parsed = JSON.parse(rawText) as PipelineClaudePayload;
-    return {
-      finalAnswer: parsed.finalAnswer ?? gptDraft,
-      rubricCheck:
-        parsed.rubricCheck ??
-        "Review course instructions, personalize with your own examples, and verify every factual claim.",
-      confidence:
-        typeof parsed.confidence === "number" ? Math.max(0, Math.min(100, parsed.confidence)) : 84,
-    };
-  } catch {
-    return {
-      finalAnswer: rawText,
-      rubricCheck:
-        "Claude did not return structured rubric feedback. Review fit, citations, and personalization before submitting.",
-      confidence: 80,
-    };
-  }
+      ?.filter((item) => item.type === "text" && item.text)
+      .map((item) => item.text)
+      .join("\n")
+      .trim() ?? ""
+  );
 }
 
 export async function POST(request: Request) {
   try {
-    if (!process.env.OPENAI_API_KEY || !process.env.PERPLEXITY_API_KEY || !process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: "Pipeline API keys are not fully configured." },
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+
+    if (!anthropicApiKey) {
+      return Response.json(
+        { error: "ANTHROPIC_API_KEY is not configured" },
         { status: 500 },
       );
     }
 
-    const body = (await request.json()) as PipelineRequestBody;
+    const rawBody = (await request.json()) as unknown;
 
-    if (
-      !body ||
-      typeof body.question !== "string" ||
-      !body.question.trim() ||
-      !isScholarCourseCode(body.courseCode) ||
-      typeof body.topicTitle !== "string" ||
-      !["full", "discussion", "quiz"].includes(body.mode)
-    ) {
-      return NextResponse.json({ error: "Invalid pipeline request payload." }, { status: 400 });
+    if (!isValidPipelineBody(rawBody)) {
+      return Response.json({ error: "Invalid pipeline request payload." }, { status: 400 });
     }
 
+    const body = rawBody;
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const send = (payload: unknown) => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        const enqueue = (payload: Record<string, unknown>) => {
+          controller.enqueue(encoder.encode(sseEvent(payload)));
         };
 
         try {
-          send({ type: "stage", stage: "GPT-4o" });
-          const gptDraft = await generateGptDraft(body);
+          const openaiApiKey = process.env.OPENAI_API_KEY;
+          const perplexityApiKey = process.env.PERPLEXITY_API_KEY;
 
-          send({ type: "stage", stage: "Sources" });
-          const sourceResult = await gatherSources(body);
+          let gptDraft = body.question.trim();
+          let sourceTopics: string[] = [];
 
-          send({ type: "stage", stage: "Claude" });
-          const claudeResult = await generateFinalAnswer(
+          if (openaiApiKey) {
+            enqueue({ stage: "gpt", status: "running" });
+            const openAiDraft = await callOpenAI(body, openaiApiKey);
+            gptDraft = normalizeDraft(openAiDraft || body.question.trim());
+            sourceTopics = extractNeedsSourceTopics(openAiDraft);
+          }
+
+          let sources: SourceRecord[] = [];
+          const shouldRunSearch =
+            sourceTopics.length > 0 || body.mode === "assignment" || body.mode === "discussion";
+
+          if (shouldRunSearch) {
+            enqueue({ stage: "search", status: "running" });
+
+            if (!perplexityApiKey) {
+              sources = [{ title: "Live search unavailable", url: "" }];
+            } else {
+              const topicsToSearch =
+                sourceTopics.length > 0 ? sourceTopics.slice(0, 3) : [body.topicTitle];
+              const searchResults = await Promise.all(
+                topicsToSearch.map((topic) => callPerplexity(topic, perplexityApiKey)),
+              );
+              sources = dedupeSources(
+                searchResults.flatMap((result) => parseSourcesFromText(result)).slice(0, 9),
+              );
+            }
+          }
+
+          enqueue({ stage: "claude", status: "running" });
+          const finalAnswer = await callClaude({
             body,
+            apiKey: anthropicApiKey,
             gptDraft,
-            sourceResult.notes,
-            sourceResult.sources,
-          );
+            sources: sources.filter((source) => Boolean(source.url)),
+          });
 
-          const result: ScholarPipelineResult = {
-            finalAnswer: claudeResult.finalAnswer,
-            sources: sourceResult.sources,
-            rubricCheck: claudeResult.rubricCheck,
-            confidence: claudeResult.confidence,
+          enqueue({
+            stage: "complete",
+            content: finalAnswer,
             gptDraft,
-          };
-
-          send({ type: "stage", stage: "Done" });
-          send({ type: "result", result });
-          send("[DONE]");
+            sources: sources.map((source) =>
+              source.url ? formatSourceForPrompt(source) : source.title,
+            ),
+            finalAnswer,
+            rubricCheck: extractTaggedSection(finalAnswer, "RUBRIC CHECK"),
+            confidence: extractTaggedSection(finalAnswer, "CONFIDENCE"),
+          });
           controller.close();
         } catch (error) {
           const message =
-            error instanceof Error ? error.message : "The pipeline failed unexpectedly.";
-          send({ type: "error", error: message });
+            error instanceof Error ? error.message : "Unknown pipeline route error.";
+          enqueue({ stage: "error", message });
           controller.close();
         }
       },
@@ -308,6 +376,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown pipeline route error.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return Response.json({ error: "Pipeline route failed", details: message }, { status: 500 });
   }
 }

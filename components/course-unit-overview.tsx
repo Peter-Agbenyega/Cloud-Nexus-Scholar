@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { GradeTracker } from "@/components/grade-tracker";
-import { SkillsPanel } from "@/components/skills-panel";
+import { readAssignmentRecords } from "@/lib/assignment-store";
 import {
   GRADUATE_MIN_GRADE,
   getUnitPointsTotal,
@@ -29,10 +29,6 @@ function getTopicKey(courseCode: string, unitNumber: number, index: number) {
   return `cns_topic_${courseCode}_${unitNumber}_${index}_understood`;
 }
 
-function getAssignmentStatusKey(assignmentId: string) {
-  return `cns_assignment_${assignmentId}_status`;
-}
-
 function readBoolean(key: string) {
   if (typeof window === "undefined") {
     return false;
@@ -42,18 +38,6 @@ function readBoolean(key: string) {
     return window.localStorage.getItem(key) === "true";
   } catch {
     return false;
-  }
-}
-
-function readString(key: string) {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  try {
-    return window.localStorage.getItem(key) ?? "";
-  } catch {
-    return "";
   }
 }
 
@@ -83,12 +67,13 @@ function buildUnitProgress(course: SyllabusCourse, unit: SyllabusUnit): UnitProg
     return total + (readBoolean(getTopicKey(course.code, unit.unit, index)) ? 1 : 0);
   }, 0);
 
-  const assignmentStatuses = unit.assignments.map((assignment) =>
-    readString(getAssignmentStatusKey(assignment.id)),
+  const assignmentRecords = readAssignmentRecords();
+  const assignmentStatuses = unit.assignments.map(
+    (assignment) => assignmentRecords.find((record) => record.id === assignment.id)?.status ?? "not_started",
   );
   const allAssignmentsSubmitted =
     assignmentStatuses.length > 0 &&
-    assignmentStatuses.every((status) => status === "submitted" || status === "complete");
+    assignmentStatuses.every((status) => status === "submitted");
 
   return {
     unitNumber: unit.unit,
@@ -277,15 +262,6 @@ export function CourseUnitOverview({ course }: CourseUnitOverviewProps) {
           <div className="h-px flex-1 bg-border/70" />
         </div>
         <GradeTracker courseCode={course.code} />
-      </section>
-
-      <section className="space-y-6">
-        <div className="flex items-center gap-4">
-          <div className="h-px flex-1 bg-border/70" />
-          <div className="text-xs uppercase tracking-[0.24em] text-accent">Skills Framework</div>
-          <div className="h-px flex-1 bg-border/70" />
-        </div>
-        <SkillsPanel courseCode={course.code} />
       </section>
     </div>
   );
