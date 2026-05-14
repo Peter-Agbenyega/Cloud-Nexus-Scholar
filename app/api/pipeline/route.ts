@@ -157,7 +157,7 @@ async function callPerplexity(topic: string, apiKey: string) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "llama-3.1-sonar-large-128k-online",
+      model: "sonar-pro",
       max_tokens: 400,
       messages: [
         {
