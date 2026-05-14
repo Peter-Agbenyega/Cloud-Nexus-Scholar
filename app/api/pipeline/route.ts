@@ -19,6 +19,7 @@ type SourceRecord = {
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const VALID_MODES: PipelineMode[] = ["assignment", "concept", "discussion", "quiz"];
 
 function isValidPipelineBody(body: unknown): body is PipelineRequestBody {
@@ -106,7 +107,7 @@ async function callOpenAI(body: PipelineRequestBody, apiKey: string) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model: OPENAI_MODEL,
       max_tokens: 600,
       messages: [
         {
@@ -130,7 +131,15 @@ Your job in this pipeline:
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI request failed: ${await response.text()}`);
+    const errorText = await response.text();
+
+    if (errorText.includes("model_not_found")) {
+      throw new Error(
+        `OpenAI model access failed for "${OPENAI_MODEL}". Set OPENAI_MODEL in Vercel to an allowed model such as gpt-4o-mini.`,
+      );
+    }
+
+    throw new Error(`OpenAI request failed: ${errorText}`);
   }
 
   const payload = (await response.json()) as {

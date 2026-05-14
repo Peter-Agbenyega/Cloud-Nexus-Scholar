@@ -82,7 +82,7 @@ const modeOptions: Array<{ value: WorkspaceMode; label: string }> = [
 const courseOptions: WorkspaceCourse[] = ["CLCS 605", "CLCS 615"];
 
 const stageMetadata: Array<{ key: StageKey; label: string }> = [
-  { key: "gpt", label: "GPT-4o drafting..." },
+  { key: "gpt", label: "GPT Drafting..." },
   { key: "search", label: "Finding real sources..." },
   { key: "claude", label: "Claude reviewing..." },
   { key: "finalizing", label: "Finalizing..." },

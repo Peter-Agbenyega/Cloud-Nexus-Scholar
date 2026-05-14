@@ -31,14 +31,14 @@ type PipelineResult = {
 const stageOrder: PipelineStage[] = ["gpt", "search", "claude", "complete"];
 const flowNodes: { id: PipelineStage | "you"; label: string }[] = [
   { id: "you", label: "You" },
-  { id: "gpt", label: "GPT-4o Draft" },
+  { id: "gpt", label: "OpenAI Draft" },
   { id: "search", label: "Live Sources" },
   { id: "claude", label: "Claude Review" },
   { id: "complete", label: "Final Answer" },
 ];
 
 const stageDescriptions: { id: PipelineStage; label: string }[] = [
-  { id: "gpt", label: "GPT-4o drafting initial answer..." },
+  { id: "gpt", label: "OpenAI drafting initial answer..." },
   { id: "search", label: "Perplexity searching real sources..." },
   { id: "claude", label: "Claude reviewing and improving..." },
   { id: "complete", label: "Finalizing your answer..." },
@@ -287,7 +287,7 @@ export function AIPipeline({
         </div>
         <h2 className="mt-3 text-2xl font-semibold text-text">Academic Intelligence Pipeline</h2>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-muted">
-          Ask one question. GPT-4o drafts, Perplexity finds real sources, Claude reviews and
+          Ask one question. OpenAI drafts, Perplexity finds real sources, Claude reviews and
           polishes, and you get one final answer.
         </p>
 
@@ -531,7 +531,7 @@ For example: Explain how IAM works for my Unit 2 assignment, or Help me understa
               onClick={() => setShowDraft((current) => !current)}
               className="text-sm font-semibold text-text transition hover:text-accent"
             >
-              {showDraft ? "Hide GPT-4o Initial Draft" : "Show GPT-4o Initial Draft"}
+              {showDraft ? "Hide OpenAI Initial Draft" : "Show OpenAI Initial Draft"}
             </button>
             {showDraft ? (
               <div className="mt-4 whitespace-pre-wrap rounded-2xl border border-border/60 bg-panel/50 p-4 text-sm leading-7 text-muted">
